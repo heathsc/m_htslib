@@ -12,7 +12,9 @@ use super::{
     hts_thread_pool::HtsThreadPool,
 };
 
-use crate::{hts::hts_opt::HtsOpt, kstring::KString, sam::sam_hdr::SamHdrRaw, HtsError};
+use crate::{
+    bgzf::BgzfRaw, hts::hts_opt::HtsOpt, kstring::KString, sam::sam_hdr::SamHdrRaw, HtsError,
+};
 
 pub type HtsPos = i64;
 
@@ -27,18 +29,13 @@ pub struct HtsIdx {
 }
 
 #[repr(C)]
-pub struct BGZF {
-    _unused: [u8; 0],
-}
-
-#[repr(C)]
 pub struct CramFd {
     _unused: [u8; 0],
 }
 
 #[repr(C)]
 union HtsFileType {
-    bgzf: *mut BGZF,
+    bgzf: *mut BgzfRaw,
     cram_fd: *mut CramFd,
     hfile: *mut HFileRaw,
 }

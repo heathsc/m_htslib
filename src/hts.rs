@@ -9,6 +9,12 @@ pub mod hts_opt;
 pub mod hts_thread_pool;
 pub mod htsfile;
 
+pub use hfile::*;
+pub use hts_format::*;
+pub use hts_opt::*;
+pub use hts_thread_pool::*;
+pub use htsfile::*;
+
 use hts_error::HtsError;
 use hts_ocstr::OCStr;
 
@@ -113,4 +119,15 @@ pub enum HtsFeature {
     CFlags,
     CppFlags,
     LdFlags,
+}
+
+/// Whence argument for Seek calls
+/// Set - relative to start of file
+/// Cur - relative to current position
+/// End - relative to end of file
+#[derive(Copy, Clone, Debug)]
+pub enum Whence {
+    Set = libc::SEEK_SET as isize,
+    Cur = libc::SEEK_CUR as isize,
+    End = libc::SEEK_END as isize,
 }

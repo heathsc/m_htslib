@@ -6,7 +6,7 @@ use std::{
     ptr::null,
 };
 
-use super::hts_format::HtsFormat;
+use super::{hts_format::HtsFormat, Whence};
 use crate::{cstr_len, error::HtsError, kstring::KString};
 
 #[repr(C)]
@@ -59,17 +59,6 @@ extern "C" {
     fn hgetc2(fp: *mut HFileRaw) -> c_int;
     fn hputc2(c: c_int, fp: *mut HFileRaw) -> c_int;
     fn hts_detect_format2(fp_: *mut HFileRaw, fname: *const c_char, fmt: *mut HtsFormat) -> c_int;
-}
-
-/// Whence argument for Seek calls
-/// Set - relative to start of file
-/// Cur - relative to current position
-/// End - relative to end of file
-#[derive(Copy, Clone, Debug)]
-pub enum Whence {
-    Set = libc::SEEK_SET as isize,
-    Cur = libc::SEEK_CUR as isize,
-    End = libc::SEEK_END as isize,
 }
 
 impl HFileRaw {
@@ -185,7 +174,7 @@ impl HFileRaw {
 
     /// Read block of characters from stream
     /// @param fp      The file stream
-    /// @param buffer  The buffer to which the peeked bytes will be written
+    /// @param buffer  The buffer to which the read bytes will be written
     /// On success returns slice from buffer with read bytes.  This can be smaller than
     /// buffer if EOF is reached.
     #[inline]
@@ -237,7 +226,7 @@ impl HFileRaw {
     /// In the absence of I/O errors, the full _nbytes_ will be written.
     ///
     /// Returns the number of bytes written if successful
-    pub fn write(&mut self, data: &[u8]) -> Result<ssize_t, HtsError> {
+    pub fn write(&mut self, data: &[u8]) -> Result<size_t, HtsError> {
         let nbytes = data.len();
         assert!(nbytes <= isize::MAX as usize, "Data size too large");
         assert!(!(self.limit.is_null() || self.begin.is_null() || self.buffer.is_null()));
@@ -265,19 +254,19 @@ impl HFileRaw {
                 self.begin = self.begin.offset(n as isize)
             }
             if n == nbytes {
-                Ok(n as ssize_t)
+                Ok(n as size_t)
             } else {
                 self.hw2(data, nbytes, n)
             }
         }
     }
 
-    fn hw2(&mut self, data: &[u8], nbytes: size_t, n: size_t) -> Result<ssize_t, HtsError> {
+    fn hw2(&mut self, data: &[u8], nbytes: size_t, n: size_t) -> Result<size_t, HtsError> {
         let n = unsafe { hwrite2(self, data.as_ptr() as *const c_void, nbytes, n) };
         if n < 0 {
             Err(HtsError::IOError)
         } else {
-            Ok(n)
+            Ok(n as size_t)
         }
     }
 

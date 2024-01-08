@@ -2,8 +2,9 @@
 
 use std::ffi::CStr;
 
+pub mod bgzf;
 pub mod error;
-mod hts;
+pub mod hts;
 pub mod kstring;
 pub mod sam;
 
