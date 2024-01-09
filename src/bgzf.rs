@@ -333,17 +333,19 @@ impl BgzfRaw {
         }
     }
 
-    /// Position stream at the uncompressed offset
+    /// Position stream at the uncompressed offset.  Requires index
     #[inline]
     pub fn useek(&mut self, x: off_t) -> Result<(), BgzfError> {
+        eprintln!("{} {}", self.is_write(), self.is_gzip());
         if unsafe { bgzf_useek(self, x, libc::SEEK_SET) } == 0 {
             Ok(())
         } else {
+            eprintln!("errcode = {}", self.errcode());
             Err(BgzfError::OperationFailed)
         }
     }
 
-    /// Position ins uncompressed stream
+    /// Position in uncompressed stream
     #[inline]
     pub fn utell(&mut self) -> Result<off_t, BgzfError> {
         match unsafe { bgzf_utell(self) } {
@@ -498,20 +500,178 @@ impl Bgzf {
         Self::make_bgzf_file(unsafe { bgzf_dopen(fd, mode.as_ptr()) })
     }
 
-    /// Open existing HFile stream for reading or writing.
+    /// Open existing HFile stream for reading or writing.  Note that `fp` is moved
+    /// into the new Bgzp struct, so `fp` is no longer available (this is to prevent
+    /// problems with double frees etc.)
     ///
-    /// `mode` as described for [Bgzf::open()]
+    /// `mode` is as described for [Bgzf::open()]
     #[inline]
-    pub fn hopen(fp: &mut HFile, mode: &CStr) -> Result<Self, BgzfError> {
-        Self::make_bgzf_file(unsafe { bgzf_hopen(fp.deref_mut(), mode.as_ptr()) })
+    pub fn hopen(fp: HFile, mode: &CStr) -> Result<Self, BgzfError> {
+        let ptr = fp.into_raw_ptr();
+        Self::make_bgzf_file(unsafe { bgzf_hopen(ptr, mode.as_ptr()) })
     }
 
     #[inline]
     fn make_bgzf_file(fp: *mut BgzfRaw) -> Result<Self, BgzfError> {
         if fp.is_null() {
-            Err(BgzfError::BgzfOpenError)
+            Err(BgzfError::OpenError)
         } else {
+            let f = unsafe { &*fp };
             Ok(Self { inner: fp })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TstBgzf {
+        bgzf: Bgzf,
+        name: *mut c_char,
+        index: bool,
+    }
+    impl TstBgzf {
+        fn new() -> Self {
+            let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
+            let mut fd = unsafe { libc::mkstemp(name) };
+            assert!(fd >= 0);
+            // Open Bgzf using file descriptor
+            let mut bgzf = Bgzf::dopen(fd, c"w").unwrap();
+            Self {
+                bgzf,
+                name,
+                index: false,
+            }
+        }
+
+        fn write_index(&mut self) {
+            assert!(!self.name.is_null());
+            unsafe {
+                let p = self.name.add(10) as *mut u8;
+                let c = *p;
+                *p = b'x';
+                self.bgzf.index_dump(CStr::from_ptr(self.name), None);
+                *p = c;
+            }
+            self.index = true;
+        }
+
+        fn reopen(mut self) -> Self {
+            let name = self.name;
+            let index = self.index;
+            self.name = std::ptr::null_mut();
+            drop(self);
+            let mut bgzf = Bgzf::open(unsafe { CStr::from_ptr(name) }, c"r").unwrap();
+            if index {
+                unsafe {
+                    let p = name.add(10) as *mut u8;
+                    let c = *p;
+                    *p = b'x';
+                    bgzf.index_load(CStr::from_ptr(name), None).unwrap();
+                    *p = c;
+                }
+            }
+            Self { bgzf, name, index }
+        }
+    }
+
+    impl Drop for TstBgzf {
+        fn drop(&mut self) {
+            if !self.name.is_null() {
+                unsafe {
+                    libc::unlink(self.name);
+                    if self.index {
+                        *self.name.add(10) = b'x' as c_char;
+                        libc::unlink(self.name);
+                    }
+                    libc::free(self.name as *mut c_void);
+                }
+            }
+        }
+    }
+    #[test]
+    fn read_tests() {
+        let mut b = Bgzf::open(c"test/bgziptest.txt.gz", c"r").unwrap();
+        assert_eq!(b.compression(), BgzfCompression::Bgzip);
+        assert_eq!(b.peek().unwrap(), b'1');
+        assert_eq!(b.getc().unwrap(), b'1');
+        let mut ks = KString::new();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"22333444455555");
+
+        let mut b = Bgzf::open(c"test/gzip.test.gz", c"r").unwrap();
+        assert_eq!(b.compression(), BgzfCompression::Gzip);
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"122333444455555");
+
+        let mut b = Bgzf::open(c"test/bgziptest.txt", c"r").unwrap();
+        assert_eq!(b.compression(), BgzfCompression::None);
+        let mut buf: [u8; 10] = [0; 10];
+        let b1 = b.read(&mut buf).unwrap();
+        assert_eq!(b1.len(), 10);
+        assert_eq!(b1[9], b'4');
+        let b1 = b.read(&mut buf).unwrap();
+        assert_eq!(b1.len(), 5);
+        assert_eq!(b1[4], b'5');
+
+        let mut fp = HFile::open(c"test/bgziptest.txt.gz", c"r").unwrap();
+        let mut b = Bgzf::hopen(fp, c"r").unwrap();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"122333444455555");
+
+        let fd = unsafe { libc::open(c"test/bgziptest.txt.gz".as_ptr(), libc::O_RDONLY) };
+        assert!(fd > 0);
+        let mut b = Bgzf::dopen(fd, c"r").unwrap();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"122333444455555");
+    }
+
+    #[test]
+    fn write_tests() {
+        let mut tb = TstBgzf::new();
+        let b = &mut tb.bgzf;
+        assert_eq!(b.compression(), BgzfCompression::Bgzip);
+        let buf = "This is a test\nSecond line".as_bytes();
+        let l = b.write(buf).unwrap();
+        assert_eq!(l, 26);
+        let mut tb = tb.reopen();
+        let b = &mut tb.bgzf;
+        assert_eq!(b.compression(), BgzfCompression::Bgzip);
+        let mut ks = KString::new();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"This is a test");
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"Second line");
+        assert_eq!(b.get_line(10, &mut ks), Err(BgzfError::EOF));
+    }
+
+    #[test]
+    fn read_index() {
+        let fname = c"test/bgziptest.txt.gz";
+        let mut b = Bgzf::open(fname, c"r").unwrap();
+        b.index_load(fname, Some(c".gzi")).unwrap();
+        b.useek(5).unwrap();
+        let mut ks = KString::new();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"3444455555");
+    }
+
+    #[test]
+    fn write_index() {
+        let mut tb = TstBgzf::new();
+        let b = &mut tb.bgzf;
+        b.index_build_init().unwrap();
+        let buf = "This is a test\nSecond line".as_bytes();
+        b.write(buf).unwrap();
+        b.flush().unwrap();
+        tb.write_index();
+        let mut tb = tb.reopen();
+        let b = &mut tb.bgzf;
+        b.check_eof().unwrap();
+        b.useek(15).unwrap();
+        let mut ks = KString::new();
+        b.get_line(10, &mut ks).unwrap();
+        assert_eq!(ks.to_cstr().unwrap(), c"Second line");
     }
 }

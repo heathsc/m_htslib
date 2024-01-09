@@ -7,13 +7,14 @@ use std::{
 
 use super::{
     hfile::{HFile, HFileRaw},
-    hts_format::HtsFormat,
+    hts_format::{hts_file_set_opt, HtsFmtOption, HtsFormat},
     hts_opt::HtsOptRaw,
     hts_thread_pool::HtsThreadPool,
 };
 
 use crate::{
-    bgzf::BgzfRaw, hts::hts_opt::HtsOpt, kstring::KString, sam::sam_hdr::SamHdrRaw, HtsError,
+    bgzf::BgzfRaw, cram::CramFdRaw, hts::hts_opt::HtsOpt, kstring::KString,
+    sam::sam_hdr::SamHdrRaw, HtsError,
 };
 
 pub type HtsPos = i64;
@@ -29,14 +30,9 @@ pub struct HtsIdx {
 }
 
 #[repr(C)]
-pub struct CramFd {
-    _unused: [u8; 0],
-}
-
-#[repr(C)]
 union HtsFileType {
     bgzf: *mut BgzfRaw,
-    cram_fd: *mut CramFd,
+    cram_fd: *mut CramFdRaw,
     hfile: *mut HFileRaw,
 }
 
@@ -167,6 +163,11 @@ impl HtsFileRaw {
             3 => Err(HtsError::NoEOFMarkerCheckForFileSystem),
             _ => Err(HtsError::UnknownError),
         }
+    }
+
+    #[inline]
+    pub fn set_opt(&mut self, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
+        hts_file_set_opt(self, opt)
     }
 }
 

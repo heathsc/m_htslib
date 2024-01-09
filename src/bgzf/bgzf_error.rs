@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum BgzfError {
     #[error("Error opening BGZF file")]
-    BgzfOpenError,
+    OpenError,
     #[error("End of file")]
     EOF,
     #[error("IO Error")]

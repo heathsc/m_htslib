@@ -364,6 +364,11 @@ impl HFile {
             Ok(Self { inner: fp })
         }
     }
+
+    pub(crate) fn into_raw_ptr(self) -> *mut HFileRaw {
+        let p = std::mem::ManuallyDrop::new(self);
+        p.inner
+    }
 }
 
 /// Report whether the file name or URL denotes remote storage

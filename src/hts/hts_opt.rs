@@ -1,25 +1,33 @@
-use libc::{c_char, c_int};
+use libc::{c_char, c_int, c_void};
 use std::{
     ffi::CStr,
     ops::{Deref, DerefMut},
     ptr,
 };
 
-use crate::{error::HtsError, hts::hts_format::HtsFmtOption};
-use crate::hts::htsfile::HtsFile;
+use crate::{error::HtsError, hts::hts_format::HtsFmtOptionRaw};
 
 #[repr(C)]
-union HtsOptVal {
+union OptVal {
     i: c_int,
-    s: *mut c_char,
+    ptr: *mut c_void,
 }
 
 #[repr(C)]
 pub struct HtsOptRaw {
     arg: *mut c_char,
-    opt: HtsFmtOption,
-    val: HtsOptVal,
+    opt: HtsFmtOptionRaw,
+    val: OptVal,
     next: *mut HtsOptRaw,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum HtsProfileOption {
+    Fast,
+    Normal,
+    Small,
+    Archive,
 }
 
 #[link(name = "hts")]

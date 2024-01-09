@@ -87,4 +87,8 @@ impl HtsThreadPool {
     pub fn init(nthreads: usize) -> Option<Self> {
         HtsTPool::init(nthreads).map(|inner| Self { inner, qsize: 0 })
     }
+
+    pub fn as_ptr(&mut self) -> *mut Self {
+        self as *mut Self
+    }
 }

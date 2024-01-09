@@ -3,6 +3,7 @@
 use std::ffi::CStr;
 
 pub mod bgzf;
+pub mod cram;
 pub mod error;
 pub mod hts;
 pub mod kstring;

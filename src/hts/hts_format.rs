@@ -1,7 +1,15 @@
 use std::ffi::{CStr, CString};
 
-use super::hts_opt::HtsOpt;
-use crate::error::HtsError;
+use super::{
+    hts_opt::{HtsOpt, HtsProfileOption},
+    hts_thread_pool::HtsThreadPool,
+    HtsFileRaw,
+};
+
+use crate::{
+    cram::{CramFdRaw, CramRange, Refs},
+    error::HtsError,
+};
 use libc::{c_char, c_int, c_short, c_void};
 
 #[repr(C)]
@@ -45,7 +53,7 @@ pub enum HtsExactFormat {
 #[repr(C)]
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-pub enum HtsFmtOption {
+pub enum HtsFmtOptionRaw {
     // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
@@ -127,8 +135,61 @@ pub enum HtsFmtOption {
     FASTQ_OPT_NAME2,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(C)]
-#[derive(Debug, Default, PartialEq)]
+pub enum MultiSeqOpt {
+    Auto = -1,
+    Single = 0,
+    Multi = 1,
+}
+
+pub enum HtsFmtOption<'a> {
+    CramDecodeMd(c_int),
+    CramPrefix(&'a CStr),
+    CramVerbosity,
+    CramSeqsPerSlice(c_int),
+    CramBasesPerSlice(c_int),
+    CramSlicesPerContainer(c_int),
+    CramEmbedRef(bool),
+    CramNoRef(bool),
+    CramPosDelta(bool),
+    CramIgnoreMd5(bool),
+    CramLossyReadNames(bool),
+    CramUseBzip2(bool),
+    CramUseRans(bool),
+    CramUseTok(bool),
+    CramUseFqz(bool),
+    CramUseArith(bool),
+    CramUseLzma(bool),
+    CramSharedRef(*mut Refs),
+    CramRange(*mut CramRange),
+    CramRangeNoSeek(*mut CramRange),
+    CramOptReference(&'a CStr),
+    CramVersion(&'a CStr),
+    CramMultiSeq(MultiSeqOpt),
+    CramNThreads(c_int),
+    CramThreadPool(&'a mut HtsThreadPool),
+    CramRequiredFields(c_int),
+    CramStoreMd(bool),
+    CramStoreNm(bool),
+
+    HtsNThreads(c_int),
+    HtsBlockSize(c_int),
+    HtsThreadPool(&'a mut HtsThreadPool),
+    HtsCacheSize(c_int),
+    HtsCompressionLevel(c_int),
+    HtsProfile(HtsProfileOption),
+    HtsFilter(&'a CStr),
+
+    FastQCasava,
+    FastQRNum,
+    FastQName2,
+    FastQAux(&'a CStr),
+    FastQBarcode(&'a CStr),
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum HtsCompression {
     #[default]
     NoCompression,
@@ -156,12 +217,183 @@ pub struct HtsFormat {
     specific: HtsOpt,
 }
 
+pub(crate) enum FormatVal<'a> {
+    Int(c_int),
+    CStr(&'a CStr),
+    Bool(bool),
+    Refs(&'a mut Refs),
+    Range(&'a mut CramRange),
+    ThreadPool(&'a mut HtsThreadPool),
+    Compression(HtsCompression),
+    MultiSeq(MultiSeqOpt),
+    Profile(HtsProfileOption),
+    None,
+}
+
+#[macro_export]
+macro_rules! set_opt {
+    ($f: ident, $fp:expr, $opt: expr) => {
+        match $opt {
+            HtsFmtOption::CramDecodeMd(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_DECODE_MD, i)
+            }
+            HtsFmtOption::CramPrefix(s) => do_ptr!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_DECODE_MD, s),
+            HtsFmtOption::CramVerbosity => do_none!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_VERBOSITY),
+            HtsFmtOption::CramSeqsPerSlice(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_SEQS_PER_SLICE, i)
+            }
+            HtsFmtOption::CramBasesPerSlice(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_BASES_PER_SLICE, i)
+            }
+            HtsFmtOption::CramSlicesPerContainer(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_SLICES_PER_CONTAINER, i)
+            }
+            HtsFmtOption::CramEmbedRef(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_EMBED_REF, b)
+            }
+            HtsFmtOption::CramNoRef(b) => do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_NO_REF, b),
+
+            HtsFmtOption::CramPosDelta(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_POS_DELTA, b)
+            }
+            HtsFmtOption::CramIgnoreMd5(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_IGNORE_MD5, b)
+            }
+            HtsFmtOption::CramLossyReadNames(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_LOSSY_NAMES, b)
+            }
+            HtsFmtOption::CramUseBzip2(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_BZIP2, b)
+            }
+            HtsFmtOption::CramUseRans(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_RANS, b)
+            }
+            HtsFmtOption::CramUseTok(b) => do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_TOK, b),
+
+            HtsFmtOption::CramUseFqz(b) => do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_FQZ, b),
+
+            HtsFmtOption::CramUseArith(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_ARITH, b)
+            }
+            HtsFmtOption::CramUseLzma(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_USE_LZMA, b)
+            }
+            HtsFmtOption::CramRange(r) => do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_RANGE, r),
+            HtsFmtOption::CramRangeNoSeek(r) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_RANGE_NOSEEK, r)
+            }
+            HtsFmtOption::CramOptReference(s) => {
+                do_ptr!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_REFERENCE, s)
+            }
+            HtsFmtOption::CramVersion(s) => {
+                do_ptr!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_VERSION, s)
+            }
+            HtsFmtOption::CramMultiSeq(x) => {
+                do_enum!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_MULTI_SEQ_PER_SLICE, x)
+            }
+            HtsFmtOption::CramNThreads(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_NTHREADS, i)
+            }
+            HtsFmtOption::CramThreadPool(p) => {
+                do_ptr!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_THREAD_POOL, p)
+            }
+            HtsFmtOption::CramRequiredFields(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_REQUIRED_FIELDS, i)
+            }
+            HtsFmtOption::CramStoreMd(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_STORE_MD, b)
+            }
+            HtsFmtOption::CramStoreNm(b) => {
+                do_bool!($f, $fp, HtsFmtOptionRaw::CRAM_OPT_STORE_NM, b)
+            }
+            HtsFmtOption::HtsNThreads(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::HTS_OPT_NTHREADS, i)
+            }
+            HtsFmtOption::HtsThreadPool(p) => {
+                do_ptr!($f, $fp, HtsFmtOptionRaw::HTS_OPT_THREAD_POOL, p)
+            }
+            HtsFmtOption::HtsCacheSize(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::HTS_OPT_CACHE_SIZE, i)
+            }
+            HtsFmtOption::HtsBlockSize(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::HTS_OPT_BLOCK_SIZE, i)
+            }
+            HtsFmtOption::HtsCompressionLevel(i) => {
+                do_val!($f, $fp, HtsFmtOptionRaw::HTS_OPT_COMPRESSION_LEVEL, i)
+            }
+            HtsFmtOption::HtsProfile(x) => do_val!($f, $fp, HtsFmtOptionRaw::HTS_OPT_PROFILE, x),
+            HtsFmtOption::HtsFilter(s) => do_ptr!($f, $fp, HtsFmtOptionRaw::HTS_OPT_FILTER, s),
+            HtsFmtOption::FastQCasava => do_none!($f, $fp, HtsFmtOptionRaw::FASTQ_OPT_CASAVA),
+            HtsFmtOption::FastQRNum => do_none!($f, $fp, HtsFmtOptionRaw::FASTQ_OPT_RNUM),
+            HtsFmtOption::FastQName2 => do_none!($f, $fp, HtsFmtOptionRaw::FASTQ_OPT_NAME2),
+            HtsFmtOption::FastQAux(s) => do_ptr!($f, $fp, HtsFmtOptionRaw::FASTQ_OPT_AUX, s),
+            HtsFmtOption::FastQBarcode(s) => {
+                do_ptr!($f, $fp, HtsFmtOptionRaw::FASTQ_OPT_BARCODE, s)
+            }
+            _ => panic!("Unknown format option"),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! do_val {
+    ($f: ident, $fp:expr, $x:expr, $y:expr) => {
+        unsafe { $f($fp, $x, *$y) }
+    };
+}
+
+#[macro_export]
+macro_rules! do_enum {
+    ($f: ident, $fp:expr, $x:expr, $y:expr) => {
+        unsafe { $f($fp, $x, *$y as c_int) }
+    };
+}
+
+#[macro_export]
+macro_rules! do_ptr {
+    ($f: ident, $fp:expr, $x:expr, $y:expr) => {
+        unsafe { $f($fp, $x, $y.as_ptr()) }
+    };
+}
+
+#[macro_export]
+macro_rules! do_none {
+    ($f: ident, $fp:expr, $x:expr) => {
+        unsafe { $f($fp, $x) }
+    };
+}
+
+#[macro_export]
+macro_rules! do_bool {
+    ($f: ident, $fp:expr, $x:expr, $y:expr) => {
+        unsafe { $f($fp, $x, if *$y { 1 } else { 0 }) }
+    };
+}
+
+pub fn hts_file_set_opt(fp: &mut HtsFileRaw, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
+    if set_opt!(hts_set_opt, fp, opt) == 0 {
+        Ok(())
+    } else {
+        Err(HtsError::OperationFailed)
+    }
+}
+
+pub fn cram_file_set_opt(fd: &mut CramFdRaw, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
+    if set_opt!(cram_set_option, fd, opt) == 0 {
+        Ok(())
+    } else {
+        Err(HtsError::OperationFailed)
+    }
+}
+
 #[link(name = "hts")]
 extern "C" {
     fn hts_parse_format(format: *mut HtsFormat, str: *const c_char) -> c_int;
     fn hts_parse_opt_list(format: *mut HtsFormat, str: *const c_char) -> c_int;
     fn hts_format_file_extension(fmt: *const HtsFormat) -> *const c_char;
     fn hts_format_description(fmt: *const HtsFormat) -> *mut c_char;
+    fn hts_set_opt(fp: *mut HtsFileRaw, opt: HtsFmtOptionRaw, ...) -> c_int;
+    fn cram_set_option(fd: *mut CramFdRaw, opt: HtsFmtOptionRaw, ...) -> c_int;
 }
 
 impl HtsFormat {
