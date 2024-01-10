@@ -426,10 +426,10 @@ mod tests {
     impl<'a> TstHFile<'a> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
-            let mut fd = unsafe { libc::mkstemp(name) };
+            let fd = unsafe { libc::mkstemp(name) };
             assert!(fd >= 0);
             // Open HFile using file descriptor
-            let mut hfile = HFile::dopen(fd, c"rw").unwrap();
+            let hfile = HFile::dopen(fd, c"rw").unwrap();
             Self { hfile, name }
         }
     }
@@ -501,7 +501,7 @@ mod tests {
         let mut tf = TstHFile::new();
 
         // Open HFile using file descriptor
-        let mut fp = &mut tf.hfile;
+        let fp = &mut tf.hfile;
 
         let l = fp
             .write("This is a test\nSecond line\n".as_bytes())

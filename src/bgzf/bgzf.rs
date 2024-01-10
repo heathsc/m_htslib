@@ -536,10 +536,10 @@ mod tests {
     impl<'a> TstBgzf<'a> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
-            let mut fd = unsafe { libc::mkstemp(name) };
+            let fd = unsafe { libc::mkstemp(name) };
             assert!(fd >= 0);
             // Open Bgzf using file descriptor
-            let mut bgzf = Bgzf::dopen(fd, c"w").unwrap();
+            let bgzf = Bgzf::dopen(fd, c"w").unwrap();
             Self {
                 bgzf,
                 name,
@@ -553,7 +553,9 @@ mod tests {
                 let p = self.name.add(10) as *mut u8;
                 let c = *p;
                 *p = b'x';
-                self.bgzf.index_dump(CStr::from_ptr(self.name), None);
+                self.bgzf
+                    .index_dump(CStr::from_ptr(self.name), None)
+                    .unwrap();
                 *p = c;
             }
             self.index = true;
@@ -617,7 +619,7 @@ mod tests {
         assert_eq!(b1.len(), 5);
         assert_eq!(b1[4], b'5');
 
-        let mut fp = HFile::open(c"test/bgziptest.txt.gz", c"r").unwrap();
+        let fp = HFile::open(c"test/bgziptest.txt.gz", c"r").unwrap();
         let mut b = Bgzf::hopen(fp, c"r").unwrap();
         b.get_line(10, &mut ks).unwrap();
         assert_eq!(ks.to_cstr().unwrap(), c"122333444455555");

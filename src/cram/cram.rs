@@ -1,13 +1,13 @@
 use crate::{
     error::HtsError,
-    hts::{cram_file_set_opt, HFileRaw, HtsFmtOption, Whence},
-    sam::sam_hdr::{SamHdr, SamHdrRaw},
+    hts::{cram_file_set_opt, HFile, HFileRaw, HtsFmtOption, Whence},
+    sam::sam_hdr::SamHdrRaw,
     CramError,
 };
 
 use libc::{c_char, c_int, off_t};
-use std::io::StderrLock;
 use std::{
+    ffi::CStr,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -34,8 +34,8 @@ extern "C" {
     fn cram_close(fp: *mut CramFdRaw) -> c_int;
     fn cram_fd_get_header(fd: *const CramFdRaw) -> *mut SamHdrRaw;
     fn cram_fd_get_version(fd: *const CramFdRaw) -> c_int;
-    fn cram_fd_major_version(fd: *const CramFdRaw) -> c_int;
-    fn cram_fd_minor_version(fd: *const CramFdRaw) -> c_int;
+    fn cram_major_vers(fd: *const CramFdRaw) -> c_int;
+    fn cram_minor_vers(fd: *const CramFdRaw) -> c_int;
     fn cram_seek(fd: *mut CramFdRaw, off: off_t, whence: c_int) -> c_int;
     fn cram_flush(fd: *mut CramFdRaw) -> c_int;
     fn cram_eof(fd: *mut CramFdRaw) -> c_int;
@@ -63,11 +63,11 @@ impl CramFdRaw {
     }
     #[inline]
     pub fn major_version(&self) -> c_int {
-        unsafe { cram_fd_major_version(self) }
+        unsafe { cram_major_vers(self) }
     }
     #[inline]
     pub fn minor_version(&self) -> c_int {
-        unsafe { cram_fd_minor_version(self) }
+        unsafe { cram_minor_vers(self) }
     }
     #[inline]
     pub fn seek(&mut self, off: off_t, whence: Whence) -> Result<(), CramError> {
@@ -138,5 +138,47 @@ impl<'a> Drop for CramFd<'a> {
         unsafe {
             cram_close(self.inner);
         };
+    }
+}
+
+impl<'a> CramFd<'a> {
+    #[inline]
+    pub fn open(name: &CStr, mode: &CStr) -> Result<Self, CramError> {
+        Self::make_cram_file(unsafe { cram_open(name.as_ptr(), mode.as_ptr()) })
+    }
+    #[inline]
+    pub fn dopen(fp: HFile, name: &CStr, mode: &CStr) -> Result<Self, CramError> {
+        let ptr = fp.into_raw_ptr();
+        Self::make_cram_file(unsafe { cram_dopen(ptr, name.as_ptr(), mode.as_ptr()) })
+    }
+    #[inline]
+    fn make_cram_file(fp: *mut CramFdRaw) -> Result<Self, CramError> {
+        if fp.is_null() {
+            Err(CramError::OpenError)
+        } else {
+            Ok(Self {
+                inner: fp,
+                phantom: PhantomData,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_and_read() {
+        // Try opening file
+        let mut c =
+            CramFd::open(c"test/test_input_1_a.cram", c"r").expect("Couldn't open CRAM file");
+        // Test for closing EOF
+        c.check_eof().expect("Missing EOF");
+        // Get version
+        let v = c.version();
+        let i = c.major_version();
+        let j = c.minor_version();
+        assert_eq!((v, i, j), (768, 3, 0));
     }
 }
