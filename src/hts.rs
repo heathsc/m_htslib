@@ -82,7 +82,7 @@ pub fn get_log_level() -> HtsLogLevel {
     unsafe { hts_get_log_level() }
 }
 
-fn try_make_boxed_slice(p: *mut *mut c_char, n: c_int) -> Result<Box<[OCStr]>, HtsError> {
+fn try_make_boxed_slice<'a>(p: *mut *mut c_char, n: c_int) -> Result<Box<[OCStr<'a>]>, HtsError> {
     if p.is_null() {
         Err(HtsError::OperationFailed)
     } else {

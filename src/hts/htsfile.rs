@@ -1,5 +1,6 @@
 use c2rust_bitfields::BitfieldStruct;
 use libc::{c_char, c_int, c_uchar};
+use std::marker::PhantomData;
 use std::{
     ffi::{c_void, CStr},
     ops::{Deref, DerefMut},
@@ -171,11 +172,12 @@ impl HtsFileRaw {
     }
 }
 
-pub struct HtsFile {
+pub struct HtsFile<'a> {
     inner: *mut HtsFileRaw,
+    phantom: PhantomData<&'a HtsFileRaw>,
 }
 
-impl Deref for HtsFile {
+impl<'a> Deref for HtsFile<'a> {
     type Target = HtsFileRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -184,23 +186,23 @@ impl Deref for HtsFile {
     }
 }
 
-impl DerefMut for HtsFile {
+impl<'a> DerefMut for HtsFile<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl Send for HtsFile {}
-unsafe impl Sync for HtsFile {}
+unsafe impl<'a> Send for HtsFile<'a> {}
+unsafe impl<'a> Sync for HtsFile<'a> {}
 
-impl Drop for HtsFile {
+impl<'a> Drop for HtsFile<'a> {
     fn drop(&mut self) {
         unsafe { hts_close(self.inner) };
     }
 }
 
-impl HtsFile {
+impl<'a> HtsFile<'a> {
     /// Open a sequence data (SAM/BAM/CRAM) or variant data (VCF/BCF)
     /// or possibly-compressed textual line-orientated file.
     ///
@@ -287,7 +289,10 @@ impl HtsFile {
         if fp.is_null() {
             Err(HtsError::FileOpenError)
         } else {
-            Ok(Self { inner: fp })
+            Ok(Self {
+                inner: fp,
+                phantom: PhantomData,
+            })
         }
     }
 }

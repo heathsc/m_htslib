@@ -1,7 +1,8 @@
 use std::ffi::{CStr, CString};
+use std::ptr;
 
 use super::{
-    hts_opt::{HtsOpt, HtsProfileOption},
+    hts_opt::{HtsOptRaw, HtsProfileOption},
     hts_thread_pool::HtsThreadPool,
     HtsFileRaw,
 };
@@ -143,7 +144,7 @@ pub enum MultiSeqOpt {
     Multi = 1,
 }
 
-pub enum HtsFmtOption<'a> {
+pub enum HtsFmtOption<'a, 'b> {
     CramDecodeMd(c_int),
     CramPrefix(&'a CStr),
     CramVerbosity,
@@ -168,14 +169,14 @@ pub enum HtsFmtOption<'a> {
     CramVersion(&'a CStr),
     CramMultiSeq(MultiSeqOpt),
     CramNThreads(c_int),
-    CramThreadPool(&'a mut HtsThreadPool),
+    CramThreadPool(&'a mut HtsThreadPool<'b>),
     CramRequiredFields(c_int),
     CramStoreMd(bool),
     CramStoreNm(bool),
 
     HtsNThreads(c_int),
     HtsBlockSize(c_int),
-    HtsThreadPool(&'a mut HtsThreadPool),
+    HtsThreadPool(&'a mut HtsThreadPool<'b>),
     HtsCacheSize(c_int),
     HtsCompressionLevel(c_int),
     HtsProfile(HtsProfileOption),
@@ -206,7 +207,6 @@ pub struct HtsFormatVersion {
     minor: c_short,
 }
 
-#[derive(Default)]
 #[repr(C)]
 pub struct HtsFormat {
     category: HtsFormatCategory,
@@ -214,20 +214,20 @@ pub struct HtsFormat {
     version: HtsFormatVersion,
     compression: HtsCompression,
     compression_level: c_short,
-    specific: HtsOpt,
+    specific: *mut HtsOptRaw,
 }
 
-pub(crate) enum FormatVal<'a> {
-    Int(c_int),
-    CStr(&'a CStr),
-    Bool(bool),
-    Refs(&'a mut Refs),
-    Range(&'a mut CramRange),
-    ThreadPool(&'a mut HtsThreadPool),
-    Compression(HtsCompression),
-    MultiSeq(MultiSeqOpt),
-    Profile(HtsProfileOption),
-    None,
+impl Default for HtsFormat {
+    fn default() -> Self {
+        Self {
+            category: Default::default(),
+            format: Default::default(),
+            version: Default::default(),
+            compression: Default::default(),
+            compression_level: 0,
+            specific: ptr::null_mut(),
+        }
+    }
 }
 
 #[macro_export]
@@ -400,7 +400,6 @@ impl HtsFormat {
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Accepts a string file format (sam, bam, cram, vcf, bam) optionally
     /// followed by a comma separated list of key=value options and splits
     /// these up into the fields of htsFormat struct.

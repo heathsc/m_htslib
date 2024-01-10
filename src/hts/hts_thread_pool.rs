@@ -1,6 +1,8 @@
-use crate::hts::htsfile::HtsFile;
-use libc::{c_char, c_int, malloc_usable_size};
-use std::ops::{Deref, DerefMut};
+use libc::c_int;
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 #[repr(C)]
 pub struct HtsTPoolRaw {
@@ -8,11 +10,12 @@ pub struct HtsTPoolRaw {
 }
 
 #[repr(C)]
-pub struct HtsTPool {
+pub struct HtsTPool<'a> {
     inner: *mut HtsTPoolRaw,
+    phantom: PhantomData<&'a HtsTPoolRaw>,
 }
 
-impl Deref for HtsTPool {
+impl<'a> Deref for HtsTPool<'a> {
     type Target = HtsTPoolRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -20,21 +23,21 @@ impl Deref for HtsTPool {
     }
 }
 
-impl DerefMut for HtsTPool {
+impl<'a> DerefMut for HtsTPool<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl Drop for HtsTPool {
+impl<'a> Drop for HtsTPool<'a> {
     fn drop(&mut self) {
         unsafe { hts_tpool_destroy(self.inner) }
     }
 }
 
-unsafe impl Send for HtsTPool {}
-unsafe impl Sync for HtsTPool {}
+unsafe impl<'a> Send for HtsTPool<'a> {}
+unsafe impl<'a> Sync for HtsTPool<'a> {}
 
 #[link(name = "hts")]
 extern "C" {
@@ -50,25 +53,28 @@ impl HtsTPoolRaw {
     }
 }
 
-impl HtsTPool {
+impl<'a> HtsTPool<'a> {
     /// Creates a worker pool with n worker threads
     pub fn init(nthreads: usize) -> Option<Self> {
         let tpool = unsafe { hts_tpool_init(nthreads as c_int) };
         if tpool.is_null() {
             None
         } else {
-            Some(Self { inner: tpool })
+            Some(Self {
+                inner: tpool,
+                phantom: PhantomData,
+            })
         }
     }
 }
 
 #[repr(C)]
-pub struct HtsThreadPool {
-    inner: HtsTPool,
+pub struct HtsThreadPool<'a> {
+    inner: HtsTPool<'a>,
     qsize: c_int,
 }
 
-impl Deref for HtsThreadPool {
+impl<'a> Deref for HtsThreadPool<'a> {
     type Target = HtsTPoolRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -76,14 +82,14 @@ impl Deref for HtsThreadPool {
     }
 }
 
-impl DerefMut for HtsThreadPool {
+impl<'a> DerefMut for HtsThreadPool<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl HtsThreadPool {
+impl<'a> HtsThreadPool<'a> {
     pub fn init(nthreads: usize) -> Option<Self> {
         HtsTPool::init(nthreads).map(|inner| Self { inner, qsize: 0 })
     }

@@ -2,6 +2,7 @@ use c2rust_bitfields::BitfieldStruct;
 use libc::{c_char, c_int, c_uint, off_t, size_t, ssize_t, EOF};
 use std::{
     ffi::{c_void, CStr},
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::null,
 };
@@ -308,11 +309,12 @@ impl HFileRaw {
 
 /// inner is always non-null, but we don't use NonNull<> here because
 /// we don't want to assume Covariance.
-pub struct HFile {
+pub struct HFile<'a> {
     inner: *mut HFileRaw,
+    phantom: PhantomData<&'a HFileRaw>,
 }
 
-impl Deref for HFile {
+impl<'a> Deref for HFile<'a> {
     type Target = HFileRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -321,23 +323,23 @@ impl Deref for HFile {
     }
 }
 
-impl DerefMut for HFile {
+impl<'a> DerefMut for HFile<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl Send for HFile {}
-unsafe impl Sync for HFile {}
+unsafe impl<'a> Send for HFile<'a> {}
+unsafe impl<'a> Sync for HFile<'a> {}
 
-impl Drop for HFile {
+impl<'a> Drop for HFile<'a> {
     fn drop(&mut self) {
         unsafe { hclose(self.inner) };
     }
 }
 
-impl HFile {
+impl<'a> HFile<'a> {
     /// Open the named file or URL as a stream
     /// The usual `fopen(3)` _mode_ letters are supported: one of
     /// `r` (read), `w` (write), `a` (append), optionally followed by any of
@@ -361,7 +363,10 @@ impl HFile {
         if fp.is_null() {
             Err(HtsError::FileOpenError)
         } else {
-            Ok(Self { inner: fp })
+            Ok(Self {
+                inner: fp,
+                phantom: PhantomData,
+            })
         }
     }
 
@@ -413,12 +418,12 @@ pub fn add_extension(
 mod tests {
     use super::*;
 
-    struct TstHFile {
-        hfile: HFile,
+    struct TstHFile<'a> {
+        hfile: HFile<'a>,
         name: *mut c_char,
     }
 
-    impl TstHFile {
+    impl<'a> TstHFile<'a> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
             let mut fd = unsafe { libc::mkstemp(name) };
@@ -429,7 +434,7 @@ mod tests {
         }
     }
 
-    impl Drop for TstHFile {
+    impl<'a> Drop for TstHFile<'a> {
         fn drop(&mut self) {
             unsafe {
                 libc::unlink(self.name);

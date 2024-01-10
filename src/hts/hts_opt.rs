@@ -1,6 +1,7 @@
 use libc::{c_char, c_int, c_void};
 use std::{
     ffi::CStr,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr,
 };
@@ -38,11 +39,12 @@ extern "C" {
 
 /// Note - inner *can* be null
 #[repr(C)]
-pub struct HtsOpt {
+pub struct HtsOpt<'a> {
     inner: *mut HtsOptRaw,
+    phantom: PhantomData<&'a HtsOptRaw>,
 }
 
-impl Deref for HtsOpt {
+impl<'a> Deref for HtsOpt<'a> {
     type Target = HtsOptRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -50,23 +52,24 @@ impl Deref for HtsOpt {
     }
 }
 
-impl DerefMut for HtsOpt {
+impl<'a> DerefMut for HtsOpt<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner }
     }
 }
-unsafe impl Send for HtsOpt {}
-unsafe impl Sync for HtsOpt {}
+unsafe impl<'a> Send for HtsOpt<'a> {}
+unsafe impl<'a> Sync for HtsOpt<'a> {}
 
-impl Default for HtsOpt {
+impl<'a> Default for HtsOpt<'a> {
     fn default() -> Self {
         Self {
             inner: ptr::null_mut(),
+            phantom: PhantomData,
         }
     }
 }
 
-impl Drop for HtsOpt {
+impl<'a> Drop for HtsOpt<'a> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             unsafe { hts_opt_free(self.inner) }
@@ -74,7 +77,7 @@ impl Drop for HtsOpt {
     }
 }
 
-impl HtsOpt {
+impl<'a> HtsOpt<'a> {
     /// Parses arg and adds it to HtsOpt
     #[inline]
     pub fn add(&mut self, arg: &CStr) -> Result<(), HtsError> {

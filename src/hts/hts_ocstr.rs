@@ -1,5 +1,8 @@
 use libc::{c_char, c_void};
-use std::ffi::{CStr, CString};
+use std::{
+    ffi::{CStr, CString},
+    marker::PhantomData,
+};
 
 /// Owned CStr
 /// The difference with CString is that the memory was allocated with libc::free(), and so needs
@@ -7,17 +10,18 @@ use std::ffi::{CStr, CString};
 /// a valid pointer to C string allocated from C code.
 ///
 /// We implement Deref so that it will inherit the methods from CStr
-pub struct OCStr {
+pub struct OCStr<'a> {
     inner: *const c_char,
+    phantom: PhantomData<&'a c_char>,
 }
 
-impl Drop for OCStr {
+impl<'a> Drop for OCStr<'a> {
     fn drop(&mut self) {
         unsafe { libc::free(self.inner as *mut c_void) }
     }
 }
 
-impl OCStr {
+impl<'a> OCStr<'a> {
     /// Wrap a raw ptr to a C string in a OCStr.  
     ///
     /// # Safety
@@ -27,7 +31,10 @@ impl OCStr {
     /// reference to this block of memory
     #[inline]
     pub unsafe fn from_ptr(p: *const c_char) -> Self {
-        Self { inner: p }
+        Self {
+            inner: p,
+            phantom: PhantomData,
+        }
     }
 
     #[inline]
@@ -36,10 +43,10 @@ impl OCStr {
     }
 }
 
-pub(crate) unsafe fn cstr_array_into_boxed_slice(
+pub(crate) unsafe fn cstr_array_into_boxed_slice<'a>(
     p: *const *const c_char,
     n: usize,
-) -> Box<[OCStr]> {
+) -> Box<[OCStr<'a>]> {
     let mut v = Vec::with_capacity(n);
     for i in 0..n {
         let ptr = unsafe { *p.add(i) };

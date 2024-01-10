@@ -1,6 +1,7 @@
 use c2rust_bitfields::BitfieldStruct;
 use std::{
     ffi::CStr,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -444,11 +445,12 @@ pub enum BgzfCompression {
     Gzip,
 }
 
-pub struct Bgzf {
+pub struct Bgzf<'a> {
     inner: *mut BgzfRaw,
+    phantom: PhantomData<&'a BgzfRaw>,
 }
 
-impl Deref for Bgzf {
+impl<'a> Deref for Bgzf<'a> {
     type Target = BgzfRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -457,17 +459,17 @@ impl Deref for Bgzf {
     }
 }
 
-impl DerefMut for Bgzf {
+impl<'a> DerefMut for Bgzf<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl Send for Bgzf {}
-unsafe impl Sync for Bgzf {}
+unsafe impl<'a> Send for Bgzf<'a> {}
+unsafe impl<'a> Sync for Bgzf<'a> {}
 
-impl Drop for Bgzf {
+impl<'a> Drop for Bgzf<'a> {
     fn drop(&mut self) {
         unsafe {
             bgzf_close(self.inner);
@@ -475,7 +477,7 @@ impl Drop for Bgzf {
     }
 }
 
-impl Bgzf {
+impl<'a> Bgzf<'a> {
     /// Open specified file for reading or writing.
     ///
     /// `mode` matching \[rwag]\[u0-9]\: 'r' for reading, 'w' for
@@ -516,8 +518,10 @@ impl Bgzf {
         if fp.is_null() {
             Err(BgzfError::OpenError)
         } else {
-            let f = unsafe { &*fp };
-            Ok(Self { inner: fp })
+            Ok(Self {
+                inner: fp,
+                phantom: PhantomData,
+            })
         }
     }
 }
@@ -526,12 +530,12 @@ impl Bgzf {
 mod tests {
     use super::*;
 
-    struct TstBgzf {
-        bgzf: Bgzf,
+    struct TstBgzf<'a> {
+        bgzf: Bgzf<'a>,
         name: *mut c_char,
         index: bool,
     }
-    impl TstBgzf {
+    impl<'a> TstBgzf<'a> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
             let mut fd = unsafe { libc::mkstemp(name) };
@@ -576,7 +580,7 @@ mod tests {
         }
     }
 
-    impl Drop for TstBgzf {
+    impl<'a> Drop for TstBgzf<'a> {
         fn drop(&mut self) {
             if !self.name.is_null() {
                 unsafe {

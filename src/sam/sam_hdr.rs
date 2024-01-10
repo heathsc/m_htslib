@@ -1,6 +1,7 @@
 use libc::{c_char, c_int, size_t};
 use std::{
     ffi::CStr,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr,
 };
@@ -211,11 +212,12 @@ impl SamHdrRaw {
 
 /// inner is always non-null, but we don't use NonNull<> here because
 /// we don't want to assume Covariance.
-pub struct SamHdr {
+pub struct SamHdr<'a> {
     inner: *mut SamHdrRaw,
+    phantom: PhantomData<&'a SamHdrRaw>,
 }
 
-impl Deref for SamHdr {
+impl<'a> Deref for SamHdr<'a> {
     type Target = SamHdrRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -224,34 +226,34 @@ impl Deref for SamHdr {
     }
 }
 
-impl DerefMut for SamHdr {
+impl<'a> DerefMut for SamHdr<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl Clone for SamHdr {
+impl<'a> Clone for SamHdr<'a> {
     fn clone(&self) -> Self {
         Self::try_dup(self).expect("Could not duplicate SamHdr")
     }
 }
 
-unsafe impl Send for SamHdr {}
-unsafe impl Sync for SamHdr {}
+unsafe impl<'a> Send for SamHdr<'a> {}
+unsafe impl<'a> Sync for SamHdr<'a> {}
 
-impl Drop for SamHdr {
+impl<'a> Drop for SamHdr<'a> {
     fn drop(&mut self) {
         unsafe { sam_hdr_destroy(self.inner) };
     }
 }
 
-impl Default for SamHdr {
+impl<'a> Default for SamHdr<'a> {
     fn default() -> Self {
         Self::try_init().expect("Could not allocate new SamHdr")
     }
 }
-impl SamHdr {
+impl<'a> SamHdr<'a> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -275,7 +277,10 @@ impl SamHdr {
         if hdr.is_null() {
             Err(e)
         } else {
-            Ok(Self { inner: hdr })
+            Ok(Self {
+                inner: hdr,
+                phantom: PhantomData,
+            })
         }
     }
 }
