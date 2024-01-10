@@ -10,10 +10,14 @@ pub enum CramError {
     IoError,
     #[error("Operation failed")]
     OperationFailed,
+    #[error("Seek operation failed")]
+    SeekFailed,
     #[error("Missing EOF marker")]
     MissingEOFMarker,
-    #[error("Cannot check EOF on this file type")]
+    #[error("Stream is not seeakable - cannot check EOF block")]
     CannotCheckEOF,
+    #[error("CRAM version does not contain EOF blocks")]
+    CramVersionHasNoEOF,
     #[error("Unknown error")]
     UnknownError,
 }
