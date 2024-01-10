@@ -1,4 +1,4 @@
-use std::{ffi::CStr, marker::PhantomData, ptr};
+use std::{ffi::CStr, ptr};
 
 use crate::error::KStringError;
 use libc::{c_char, c_void, size_t};
@@ -9,7 +9,6 @@ pub struct KString {
     l: size_t,
     m: size_t,
     s: *mut c_char,
-    phantom: PhantomData<c_char>,
 }
 
 /// Because this has to interact with htslib which can alloc or free the storage
@@ -20,7 +19,6 @@ impl Default for KString {
             l: 0,
             m: 0,
             s: ptr::null_mut(),
-            phantom: PhantomData,
         }
     }
 }

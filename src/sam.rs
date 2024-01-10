@@ -5,3 +5,7 @@ pub mod sam_hdr;
 
 mod cigar_validate;
 pub mod sam_error;
+
+pub use cigar::*;
+pub use cigar_buf::*;
+pub use sam_hdr::*;
