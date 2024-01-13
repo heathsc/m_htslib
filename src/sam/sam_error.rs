@@ -12,4 +12,10 @@ pub enum SamError {
     OutOfMemory,
     #[error("Failed to parse header text")]
     HeaderParseFailed,
+    #[error("Operation failed")]
+    OperationFailed,
+    #[error("Illegal characters in new header line")]
+    IllegalHeaderChars,
+    #[error("Illegal Header Tag (Tag must be two characters)")]
+    IllegalTagLength,
 }

@@ -1,13 +1,119 @@
 use libc::{c_char, c_int, size_t};
 use std::{
-    ffi::CStr,
+    ffi::{CStr, CString},
+    fmt::{self, Formatter},
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr,
 };
 
 use super::sam_error::SamError;
-use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString};
+use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString, HtsError};
+
+#[repr(C)]
+pub struct SamHdrRaw {
+    _unused: [u8; 0],
+}
+
+pub struct SamHdrTagValue<'a> {
+    tag: [char; 2],
+    value: &'a str,
+}
+
+impl<'a> SamHdrTagValue<'a> {
+    pub fn new_tag(s: &str, value: &'a str) -> Result<Self, SamError> {
+        if s.len() != 2 {
+            Err(SamError::IllegalTagLength)
+        } else {
+            let mut it = s.chars();
+            let t1 = it.next().unwrap();
+            let t2 = it.next().unwrap();
+            let tag = [t1, t2];
+            Ok(Self { tag, value })
+        }
+    }
+
+    pub fn new(tag: [char; 2], value: &'a str) -> Self {
+        Self { tag, value }
+    }
+
+    pub fn tag(&self) -> [char; 2] {
+        self.tag
+    }
+    pub fn value(&self) -> &str {
+        self.value
+    }
+}
+
+impl<'a> fmt::Display for SamHdrTagValue<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}:{}", self.tag[0], self.tag[1], self.value)
+    }
+}
+
+fn write_tag_value_slice(v: &[SamHdrTagValue], f: &mut Formatter<'_>) -> fmt::Result {
+    for t in v {
+        write!(f, "\t{t}")?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum SamHdrType {
+    Hd,
+    Sq,
+    Rg,
+    Pg,
+}
+
+impl fmt::Display for SamHdrType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Hd => "HD",
+                Self::Sq => "SQ",
+                Self::Rg => "RG",
+                Self::Pg => "PG",
+            }
+        )
+    }
+}
+
+pub enum SamHdrLine<'a> {
+    Line(SamHdrType, Vec<SamHdrTagValue<'a>>),
+    Comment(&'a str),
+}
+
+impl<'a> SamHdrLine<'a> {
+    pub fn line(ty: SamHdrType) -> Self {
+        Self::Line(ty, Vec::new())
+    }
+
+    pub fn comment(s: &'a str) -> Self {
+        Self::Comment(s)
+    }
+
+    pub fn push(&mut self, tv: SamHdrTagValue<'a>) {
+        match self {
+            Self::Line(_, v) => v.push(tv),
+            Self::Comment(_) => panic!("Cannot add tag to comment line"),
+        }
+    }
+}
+
+impl<'a> fmt::Display for SamHdrLine<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Comment(s) => write!(f, "@CO\t{s}"),
+            Self::Line(t, v) => {
+                write!(f, "@{t}")?;
+                write_tag_value_slice(v, f)
+            }
+        }
+    }
+}
 
 #[link(name = "hts")]
 extern "C" {
@@ -17,6 +123,7 @@ extern "C" {
     fn sam_hdr_destroy(hd_: *mut SamHdrRaw);
     fn sam_hdr_dup(hd_: *const SamHdrRaw) -> *mut SamHdrRaw;
     fn sam_hdr_parse(len_: size_t, text_: *const c_char) -> *mut SamHdrRaw;
+    fn sam_hdr_length(hd: *mut SamHdrRaw) -> size_t;
     fn sam_hdr_add_lines(hd_: *mut SamHdrRaw, lines_: *const c_char, len_: size_t) -> c_int;
     fn sam_hdr_remove_except(
         hd_: *mut SamHdrRaw,
@@ -27,8 +134,8 @@ extern "C" {
     fn sam_hdr_nref(hd_: *const SamHdrRaw) -> c_int;
     fn sam_hdr_tid2name(hd_: *const SamHdrRaw, i_: c_int) -> *const c_char;
     fn sam_hdr_tid2len(hd_: *const SamHdrRaw, i_: c_int) -> c_int;
-    fn sam_hdr_name2tid(hd_: *const SamHdrRaw, nm_: *const c_char) -> c_int;
-    fn sam_hdr_str(hd_: *const SamHdrRaw) -> *const c_char;
+    fn sam_hdr_name2tid(hd_: *mut SamHdrRaw, nm_: *const c_char) -> c_int;
+    fn sam_hdr_str(hd_: *mut SamHdrRaw) -> *const c_char;
     fn sam_hdr_change_HD(hd: *mut SamHdrRaw, key: *const c_char, val: *const c_char);
     fn sam_hdr_find_line_id(
         hd: *mut SamHdrRaw,
@@ -62,27 +169,30 @@ extern "C" {
     fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
 }
 
-#[repr(C)]
-pub struct SamHdrRaw {
-    _unused: [u8; 0],
-}
-
 impl SamHdrRaw {
+    /// Writes the header to `hts_file`
     pub fn write(&self, hts_file: &mut HtsFileRaw) -> Result<(), SamError> {
         match unsafe { sam_hdr_write(hts_file as *mut HtsFileRaw, self) } {
             0 => Ok(()),
             _ => Err(SamError::FailedHeaderWrite),
         }
     }
+
+    /// Returns the number of references in hte header
     #[inline]
     pub fn nref(&self) -> usize {
         let l = unsafe { sam_hdr_nref(self) };
+        assert!(l >= 0);
         l as usize
     }
+
     #[inline]
     fn check_idx(&self, i: usize) -> bool {
         i < self.nref()
     }
+
+    /// Gets the name of the sequence corresponding to a target index
+    #[inline]
     pub fn tid2name(&self, i: usize) -> Option<&CStr> {
         if self.check_idx(i) {
             from_c(unsafe { sam_hdr_tid2name(self, i as c_int) })
@@ -90,15 +200,21 @@ impl SamHdrRaw {
             None
         }
     }
+
+    /// Gets the length of the sequence corresponding to a target index
     pub fn tid2len(&self, i: usize) -> Option<usize> {
         if self.check_idx(i) {
             let len = unsafe { sam_hdr_tid2len(self, i as c_int) };
+            assert!(len >= 0);
             Some(len as usize)
         } else {
             None
         }
     }
-    pub fn name2tid(&self, cname: &CStr) -> Option<usize> {
+
+    /// Gets the target index corresponding to a sequence name (if it exists in the header)
+    #[inline]
+    pub fn name2tid(&mut self, cname: &CStr) -> Option<usize> {
         let tid = unsafe { sam_hdr_name2tid(self, cname.as_ptr()) };
         if tid < 0 {
             None
@@ -106,15 +222,36 @@ impl SamHdrRaw {
             Some(tid as usize)
         }
     }
-    pub fn text(&self) -> Option<&CStr> {
+
+    /// Returns the current header txt.  Can be invalidated by a call to another header function
+    #[inline]
+    pub fn text(&mut self) -> Option<&CStr> {
         from_c(unsafe { sam_hdr_str(self) })
     }
 
+    /// Returns length of header text
+    #[inline]
+    pub fn length(&mut self) -> Result<usize, SamError> {
+        match unsafe { sam_hdr_length(self) } {
+            size_t::MAX => Err(SamError::OperationFailed),
+            l => Ok(l as usize),
+        }
+    }
+
+    /// Add SAM header record(s) with optional new line.  If multiple lines are present (separated by newlines)
+    /// then they will be added in order
+    #[inline]
     pub fn add_lines(&mut self, lines: &CStr) -> Result<(), SamError> {
         match unsafe { sam_hdr_add_lines(self, lines.as_ptr(), cstr_len(lines) as size_t) } {
             0 => Ok(()),
             _ => Err(SamError::FailedAddHeaderLine),
         }
+    }
+
+    pub fn add_line(&mut self, line: &SamHdrLine) -> Result<(), SamError> {
+        let nl = format!("{line}");
+        let cs = CString::new(nl.as_str()).map_err(|_| SamError::IllegalHeaderChars)?;
+        self.add_lines(&cs)
     }
 
     pub fn remove_except(
@@ -282,5 +419,32 @@ impl<'a> SamHdr<'a> {
                 phantom: PhantomData,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn construct() -> Result<(), SamError> {
+        // Make empty header structure and add a line to it
+        let mut hdr = SamHdr::new();
+        hdr.add_lines(c"@HD\tVN:1.6\tSO:coordinate")?;
+        assert_eq!(hdr.length().unwrap(), 25);
+
+        let mut nl = SamHdrLine::line(SamHdrType::Sq);
+        nl.push(SamHdrTagValue::new_tag("SN", "CHROMOSOME_I")?);
+        nl.push(SamHdrTagValue::new_tag("LN", "1009800")?);
+        nl.push(SamHdrTagValue::new_tag(
+            "M5",
+            "8ede36131e0dbf3417807e48f77f3ebd",
+        )?);
+        hdr.add_line(&nl)?;
+        let cs = hdr.text().unwrap();
+        let l = cstr_len(cs);
+        assert_eq!(hdr.length().unwrap(), l);
+        assert_eq!(l, 92);
+        Ok(())
     }
 }
