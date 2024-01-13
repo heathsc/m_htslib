@@ -9,6 +9,7 @@ use std::{
 use super::{
     hfile::{HFile, HFileRaw},
     hts_format::{hts_file_set_opt, HtsFmtOption, HtsFormat},
+    hts_idx::HtsIdxRaw,
     hts_opt::HtsOptRaw,
     hts_thread_pool::HtsThreadPool,
 };
@@ -18,15 +19,8 @@ use crate::{
     sam::sam_hdr::SamHdrRaw, HtsError,
 };
 
-pub type HtsPos = i64;
-
 #[repr(C)]
 pub(crate) struct HtsFilter {
-    _unused: [u8; 0],
-}
-
-#[repr(C)]
-pub struct HtsIdx {
     _unused: [u8; 0],
 }
 
@@ -54,7 +48,7 @@ pub struct HtsFileRaw {
     fp: HtsFileType,
     state: *mut c_void,
     format: HtsFormat,
-    idx: *mut HtsIdx,
+    idx: *mut HtsIdxRaw,
     fnidx: *const c_char,
     bam_header: *mut SamHdrRaw,
     filter: *mut HtsFilter,
@@ -280,8 +274,9 @@ impl<'a> HtsFile<'a> {
     }
 
     /// Open an existing stream as an HtsFile
-    pub fn hopen(hfile: &mut HFile, name: &CStr, mode: &CStr) -> Result<Self, HtsError> {
-        let fp = unsafe { hts_hopen(hfile.deref_mut(), name.as_ptr(), mode.as_ptr()) };
+    pub fn hopen(hfile: HFile, name: &CStr, mode: &CStr) -> Result<Self, HtsError> {
+        let ptr = hfile.into_raw_ptr();
+        let fp = unsafe { hts_hopen(ptr, name.as_ptr(), mode.as_ptr()) };
         Self::mk_hts_file(fp)
     }
 

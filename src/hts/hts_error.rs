@@ -28,4 +28,12 @@ pub enum HtsError {
     NoEOFMarkerCheckForFileSystem,
     #[error("Unknown error")]
     UnknownError,
+    #[error("Failed to initialize index")]
+    IndexInitFailed,
+    #[error("Invalid Index Format")]
+    InvalidIndexFormat,
+    #[error("Out of memory")]
+    OutOfMemory,
+    #[error("No stats information available")]
+    StatsUnavailable,
 }

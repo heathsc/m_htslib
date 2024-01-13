@@ -1,9 +1,10 @@
-use libc::{c_char, c_int, c_uint};
+use libc::{c_char, c_int, c_uint, c_void};
 use std::ffi::CStr;
 
 pub mod hfile;
 pub mod hts_error;
 pub mod hts_format;
+pub mod hts_idx;
 pub mod hts_ocstr;
 pub mod hts_opt;
 pub mod hts_thread_pool;
@@ -11,12 +12,15 @@ pub mod htsfile;
 
 pub use hfile::*;
 pub use hts_format::*;
+pub use hts_idx::*;
 pub use hts_opt::*;
 pub use hts_thread_pool::*;
 pub use htsfile::*;
 
 use hts_error::HtsError;
 use hts_ocstr::OCStr;
+
+pub type HtsPos = i64;
 
 #[repr(C)]
 pub enum HtsLogLevel {
@@ -131,3 +135,6 @@ pub enum Whence {
     Cur = libc::SEEK_CUR as isize,
     End = libc::SEEK_END as isize,
 }
+
+/// Not sure if I will use this, but if I do it won't be exposed to the public API
+pub(crate) type HtsName2Id = unsafe extern "C" fn(hdr: *mut c_void, str: *const c_char) -> c_int;
