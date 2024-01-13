@@ -40,6 +40,7 @@ impl<'a> SamHdrTagValue<'a> {
     pub fn tag(&self) -> [char; 2] {
         self.tag
     }
+
     pub fn value(&self) -> &str {
         self.value
     }
@@ -66,18 +67,29 @@ pub enum SamHdrType {
     Pg,
 }
 
+impl SamHdrType {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Hd => "HD",
+            Self::Sq => "SQ",
+            Self::Rg => "RG",
+            Self::Pg => "PG",
+        }
+    }
+
+    pub fn to_cstr(&self) -> &'static CStr {
+        match self {
+            Self::Hd => c"HD",
+            Self::Sq => c"SQ",
+            Self::Rg => c"RG",
+            Self::Pg => c"PG",
+        }
+    }
+}
+
 impl fmt::Display for SamHdrType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Hd => "HD",
-                Self::Sq => "SQ",
-                Self::Rg => "RG",
-                Self::Pg => "PG",
-            }
-        )
+        write!(f, "{}", self.to_str())
     }
 }
 
@@ -113,6 +125,41 @@ impl<'a> fmt::Display for SamHdrLine<'a> {
             }
         }
     }
+}
+
+#[macro_export]
+macro_rules! sam_hdr_line {
+    ( "HD", $( $t: expr, $v:expr ),* ) => {{
+        let mut tmp_line = SamHdrLine::line(SamHdrType::Hd);
+        $(
+           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+        )*
+        Ok(tmp_line)
+    }};
+    ( "SQ", $( $t: expr, $v:expr ),* ) => {{
+        let mut tmp_line = SamHdrLine::line(SamHdrType::Sq);
+        $(
+           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+        )*
+        Ok(tmp_line)
+    }};
+    ( "RG", $( $t: expr, $v:expr ),* ) => {{
+        let mut tmp_line = SamHdrLine::line(SamHdrType::Rg);
+        $(
+           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+        )*
+        Ok(tmp_line)
+    }};
+    ( "PG", $( $t: expr, $v:expr ),* ) => {{
+        let mut tmp_line = SamHdrLine::line(SamHdrType::Pg);
+        $(
+           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+        )*
+        Ok(tmp_line)
+    }};
+    ( "CO", $s:expr ) => {
+        Ok(SamHdrLine::comment($s))
+    };
 }
 
 #[link(name = "hts")]
@@ -256,21 +303,29 @@ impl SamHdrRaw {
 
     pub fn remove_except(
         &mut self,
-        ln_type: &CStr,
-        id_key: Option<&CStr>,
-        id_value: Option<&CStr>,
+        ln_type: &SamHdrType,
+        id: Option<SamHdrTagValue>,
     ) -> Result<(), SamError> {
-        match if let (Some(key), Some(value)) = (id_key, id_value) {
-            unsafe { sam_hdr_remove_except(self, ln_type.as_ptr(), key.as_ptr(), value.as_ptr()) }
+        match if let Some(tv) = id {
+            unsafe {
+                sam_hdr_remove_except(
+                    self,
+                    ln_type.to_cstr().as_ptr(),
+                    tv.tag().as_ptr() as *const c_char,
+                    tv.value().as_ptr() as *const c_char,
+                )
+            }
         } else {
-            unsafe { sam_hdr_remove_except(self, ln_type.as_ptr(), ptr::null(), ptr::null()) }
+            unsafe {
+                sam_hdr_remove_except(self, ln_type.to_cstr().as_ptr(), ptr::null(), ptr::null())
+            }
         } {
             0 => Ok(()),
             _ => Err(SamError::FailedRemoveHeaderLines),
         }
     }
-    pub fn remove(&mut self, ln_type: &CStr) -> Result<(), SamError> {
-        self.remove_except(ln_type, None, None)
+    pub fn remove(&mut self, ln_type: &SamHdrType) -> Result<(), SamError> {
+        self.remove_except(ln_type, None)
     }
     pub fn change_hd(&mut self, key: &CStr, val: Option<&CStr>) {
         let val = if let Some(v) = val {
@@ -432,14 +487,15 @@ mod tests {
         let mut hdr = SamHdr::new();
         hdr.add_lines(c"@HD\tVN:1.6\tSO:coordinate")?;
         assert_eq!(hdr.length().unwrap(), 25);
-
-        let mut nl = SamHdrLine::line(SamHdrType::Sq);
-        nl.push(SamHdrTagValue::new_tag("SN", "CHROMOSOME_I")?);
-        nl.push(SamHdrTagValue::new_tag("LN", "1009800")?);
-        nl.push(SamHdrTagValue::new_tag(
+        let nl = sam_hdr_line!(
+            "SQ",
+            "SN",
+            "CHROMOSOME_I",
+            "LN",
+            "1009800",
             "M5",
-            "8ede36131e0dbf3417807e48f77f3ebd",
-        )?);
+            "8ede36131e0dbf3417807e48f77f3ebd"
+        )?;
         hdr.add_line(&nl)?;
         let cs = hdr.text().unwrap();
         let l = cstr_len(cs);
