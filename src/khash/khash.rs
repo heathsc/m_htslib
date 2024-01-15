@@ -609,6 +609,32 @@ impl KHashFunc for u32 {
     }
 }
 
+impl KHashFunc for u64 {
+    fn hash(&self) -> u32 {
+        (*self >> 33 ^ (*self) ^ (*self) << 11) as u32
+    }
+}
+
+impl KHashFunc for *const libc::c_char {
+    fn hash(&self) -> u32 {
+        let mut p = *self;
+        let mut h = unsafe { *p } as u32;
+        if h != 0 {
+            loop {
+                unsafe {
+                    p = p.add(1);
+                    let x = *p;
+                    if x == 0 {
+                        break;
+                    }
+                    h = (h << 5).overflowing_sub(h).0 + (x as u32);
+                }
+            }
+        }
+        h
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,10 +680,19 @@ mod tests {
         }
     }
 
+    impl KHashFunc for Test {
+        fn hash(&self) -> u32 {
+            let p = self.s.as_bytes();
+            p[1..].iter().fold(p[0] as u32, |h, x| {
+                (h >> 5).overflowing_sub(h).0 + (*x as u32)
+            })
+        }
+    }
+
     #[test]
     fn hash_u32_string() -> Result<(), KHashError> {
-        let mut h: KHashMap<KHInt, Test> = KHashMap::init();
-        assert_eq!(h.insert(42, Test::new("string1"))?, None);
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(42u32, Test::new("string1"))?, None);
         assert_eq!(h.insert(64, Test::new("string2"))?, None);
         assert_eq!(h.insert(1, Test::new("string3"))?, None);
         assert_eq!(h.insert(73, Test::new("string4"))?, None);
@@ -669,6 +704,15 @@ mod tests {
         eprintln!("Removing key 1");
         assert_eq!(h.delete(&1), Some(Test::new("string3")));
         assert_eq!(h.insert(1, Test::new("string7"))?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn hash_tstring_u32() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(Test::new("key1"), 42)?, None);
+        assert_eq!(h.insert(Test::new("key2"), 76)?, None);
+        assert_eq!(h.insert(Test::new("key1"), 21)?, Some(42));
         Ok(())
     }
 }
