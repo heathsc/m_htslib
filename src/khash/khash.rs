@@ -53,7 +53,7 @@ fn _get_flag(flags: *const u32, i: u32) -> u32 {
 }
 #[inline]
 fn get_flag(flags: *const u32, i: u32) -> u32 {
-    _get_flag(flags, i) >> ((i * 0xf) << 1)
+    _get_flag(flags, i) >> ((i & 0xf) << 1)
 }
 #[inline]
 fn get_flag_ptr(flags: *mut u32, i: u32) -> *mut u32 {
@@ -96,7 +96,7 @@ impl<K> KHashRaw<K> {
     }
     #[inline]
     pub fn get_key(&self, i: u32) -> Option<&K> {
-        if i < self.n_buckets {
+        if i < self.n_buckets && !self.is_either(i) {
             Some(unsafe { &*self.keys.add(i as usize) })
         } else {
             None
@@ -161,14 +161,15 @@ impl<K> KHashRaw<K> {
 }
 
 impl<K: KHashFunc + PartialEq> KHashRaw<K> {
-    pub fn read_idx(&self, key: &K) -> Option<KHInt> {
+    fn _find(&self, key: &K) -> Option<KHInt> {
         if self.n_buckets > 0 {
             let mut step = 0;
             let mask = self.n_buckets - 1;
             let k = K::hash(key);
             let mut i = k & mask;
             let last = i;
-            while !self.is_empty(i) && self.is_del(i) || key != unsafe { self.get_key_unchecked(i) }
+            while !self.is_empty(i)
+                && (self.is_del(i) || key != unsafe { self.get_key_unchecked(i) })
             {
                 step += 1;
                 i = (i + step) & mask;
@@ -185,31 +186,34 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             None
         }
     }
-    pub fn write_idx<V>(&mut self, key: K, vptr: Option<&mut *mut V>) -> Result<KHInt, KHInt> {
+    fn _find_entry<V>(&mut self, key: &K, vptr: Option<&mut *mut V>) -> Result<KHInt, KHashError> {
+        eprintln!("find_entry: {} {}", self.n_occupied, self.upper_bound);
         if self.n_occupied >= self.upper_bound {
+            eprintln!("Resizing");
             // Update hash table
             if self.n_buckets > (self.size << 1) {
                 // Clear "deleted" elements
-                if self.resize(self.n_buckets - 1, vptr).is_err() {
-                    return Ok(self.n_buckets);
-                }
-            } else if self.resize(self.n_buckets + 1, vptr).is_err() {
+                self.resize(self.n_buckets - 1, vptr)?;
+            } else {
                 // Expand hash table
-                return Ok(self.n_buckets);
+                self.resize(self.n_buckets + 1, vptr)?;
             }
+            eprintln!("n_buckets now {}", self.n_buckets);
         }
         let mask = self.n_buckets - 1;
-        let mut step = 0;
-        let k = K::hash(&key);
+        let k = K::hash(key);
         let mut i = k & mask;
+        eprintln!("k = {k}, mask = {mask}, i = {i}");
         let x = if self.is_empty(i) {
+            eprintln!("Empty!");
             i // for speed up
         } else {
             let mut site = self.n_buckets;
             let mut x = site;
             let last = i;
-            while !self.is_empty(i) && self.is_del(i)
-                || &key != unsafe { self.get_key_unchecked(i) }
+            let mut step = 0;
+            while !self.is_empty(i)
+                && (self.is_del(i) || key != unsafe { self.get_key_unchecked(i) })
             {
                 if self.is_del(i) {
                     site = i
@@ -230,19 +234,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             }
             x
         };
-        let fg = get_flag(self.flags, x);
-        if (fg & 3) != 0 {
-            // Either not present or deleted
-            unsafe { *self.keys.add(x as usize) = key }
-            self.set_is_both_false(x);
-            self.size += 1;
-            if (fg & 1) != 0 {
-                self.n_occupied += 1;
-            }
-            Err(x)
-        } else {
-            Ok(x)
-        }
+        Ok(x)
     }
     fn resize<V>(
         &mut self,
@@ -291,7 +283,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             let nb = self.n_buckets;
             for j in 0..nb {
                 if !self.is_either(j) {
-                    let new_mask = self.n_buckets - 1;
+                    let new_mask = new_n_buckets - 1;
                     self.set_is_del_true(j);
                     let mut key = unsafe {
                         let mut k: mem::MaybeUninit<K> = mem::MaybeUninit::uninit();
@@ -333,30 +325,30 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                             break;
                         }
                     }
-                    if nb > new_n_buckets {
-                        // Shrink the hash table
-                        self.keys = unsafe {
-                            libc::realloc(
-                                self.keys as *mut c_void,
-                                (new_n_buckets as size_t) * mem::size_of::<K>(),
-                            )
-                        } as *mut K;
-                        if let Some(vptr) = val_ptr.as_mut() {
-                            **vptr = unsafe {
-                                libc::realloc(
-                                    self.keys as *mut c_void,
-                                    (new_n_buckets as size_t) * mem::size_of::<V>(),
-                                )
-                            } as *mut V;
-                        }
-                    }
-                    unsafe { libc::free(self.flags as *mut c_void) }
-                    self.flags = new_flags;
-                    self.n_buckets = new_n_buckets;
-                    self.n_occupied = self.size;
-                    self.upper_bound = ((self.n_buckets as f64) * HASH_UPPER).round() as KHInt;
                 }
             }
+            if nb > new_n_buckets {
+                // Shrink the hash table
+                self.keys = unsafe {
+                    libc::realloc(
+                        self.keys as *mut c_void,
+                        (new_n_buckets as size_t) * mem::size_of::<K>(),
+                    )
+                } as *mut K;
+                if let Some(vptr) = val_ptr.as_mut() {
+                    **vptr = unsafe {
+                        libc::realloc(
+                            self.keys as *mut c_void,
+                            (new_n_buckets as size_t) * mem::size_of::<V>(),
+                        )
+                    } as *mut V;
+                }
+            }
+            unsafe { libc::free(self.flags as *mut c_void) }
+            self.flags = new_flags;
+            self.n_buckets = new_n_buckets;
+            self.n_occupied = self.size;
+            self.upper_bound = ((self.n_buckets as f64) * HASH_UPPER).round() as KHInt;
         }
         Ok(())
     }
@@ -394,11 +386,33 @@ impl<K, V> KHashMapRaw<K, V> {
     }
     #[inline]
     pub fn get_val(&self, i: u32) -> Option<&V> {
-        if i < self.n_buckets {
+        if i < self.n_buckets && !self.is_either(i) {
             Some(unsafe { &*self.vals.add(i as usize) })
         } else {
             None
         }
+    }
+}
+
+impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
+    #[inline]
+    pub fn entry(&mut self, key: K) -> Result<MapEntryMut<K, V>, KHashError> {
+        self.hash
+            ._find_entry(&key, Some(&mut self.vals))
+            .map(|idx| MapEntryMut {
+                map: self,
+                idx,
+                key,
+            })
+    }
+    #[inline]
+    pub fn find(&self, key: &K) -> Option<MapEntry<K, V>> {
+        self._find(key).map(|idx| MapEntry { map: self, idx })
+    }
+    #[inline]
+    pub fn insert(&mut self, key: K, val: V) -> Result<Option<V>, KHashError> {
+        let idx = self.hash._find_entry(&key, Some(&mut self.vals))?;
+        Ok(_insert_val(self, idx, key, val))
     }
 }
 #[repr(C)]
@@ -453,7 +467,9 @@ impl<'a, K, V> Drop for KHashMap<'a, K, V> {
 
 impl<'a, K: KHashFunc + PartialEq, V: Default> KHashMap<'a, K, V> {
     pub fn init() -> Self {
-        let inner = unsafe { libc::calloc(1, mem::size_of::<Self>()) as *mut KHashMapRaw<K, V> };
+        let inner = unsafe {
+            libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
+        };
         assert!(!inner.is_null(), "Out of memory error");
         Self {
             inner,
@@ -489,5 +505,105 @@ impl<'a, K> Drop for KHashSet<'a, K> {
         unsafe {
             libc::free(self.inner as *mut c_void);
         }
+    }
+}
+
+pub struct MapEntry<'a, K, V> {
+    map: &'a KHashMapRaw<K, V>,
+    idx: KHInt,
+}
+
+impl<'a, K, V> MapEntry<'a, K, V> {
+    #[inline]
+    pub fn idx(&self) -> KHInt {
+        self.idx
+    }
+
+    #[inline]
+    pub fn value(&self) -> Option<&V> {
+        self.map.get_val(self.idx)
+    }
+
+    #[inline]
+    pub fn key(&self) -> Option<&K> {
+        self.map.get_key(self.idx)
+    }
+}
+
+pub struct MapEntryMut<'a, K, V> {
+    map: &'a mut KHashMapRaw<K, V>,
+    key: K,
+    idx: KHInt,
+}
+
+impl<'a, K, V> MapEntryMut<'a, K, V> {
+    #[inline]
+    pub fn idx(&self) -> KHInt {
+        self.idx
+    }
+
+    #[inline]
+    pub fn insert(mut self, mut val: V) -> Option<V> {
+        let i = self.idx;
+        assert!(i < self.map.n_buckets);
+        _insert_val(self.map, i, self.key, val)
+    }
+}
+
+fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) -> Option<V> {
+    let fg = get_flag(map.flags, i);
+    eprintln!("Inserting: i={i}, fg={}", fg & 3);
+    if (fg & 3) != 0 {
+        // Either not present or deleted
+        unsafe {
+            ptr::copy_nonoverlapping(&key, map.keys.add(i as usize), 1);
+            ptr::copy_nonoverlapping(&val, map.vals.add(i as usize), 1);
+        }
+        map.size += 1;
+        if (fg & 2) != 0 {
+            map.n_occupied += 1;
+        }
+        set_is_both_false(map.flags, i);
+        None
+    } else {
+        unsafe { ptr::swap(&mut val, map.vals.add(i as usize)) }
+        Some(val)
+    }
+}
+
+impl KHashFunc for KHInt {
+    fn hash(&self) -> u32 {
+        *self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    #[test]
+    fn hash_int_cstr() -> Result<(), KHashError> {
+        let mut h: KHashMap<KHInt, &CStr> = KHashMap::init();
+        assert_eq!(h.insert(10, c"String10")?, None);
+        assert_eq!(h.insert(2, c"String2")?, None);
+        assert_eq!(h.insert(290, c"String290")?, None);
+        assert_eq!(h.insert(2, c"String2a")?, Some(c"String2"));
+        assert_eq!(h.insert(500, c"String500")?, None);
+        assert_eq!(h.insert(20, c"String20")?, None);
+
+        let m = h.find(&2).expect("Missing entry");
+        assert_eq!(m.value(), Some(&c"String2a"));
+
+        assert_eq!(h.insert(1, c"String1")?, None);
+        assert_eq!(h.insert(100, c"String100")?, None);
+        assert_eq!(h.insert(7, c"String7")?, None);
+        assert_eq!(h.insert(98, c"String98")?, None);
+        assert_eq!(h.insert(16384, c"String16384")?, None);
+
+        let m = h.find(&10).expect("Missing entry");
+        assert_eq!(m.value(), Some(&c"String10"));
+
+        Ok(())
     }
 }
