@@ -6,6 +6,7 @@ pub mod bgzf;
 pub mod cram;
 pub mod error;
 pub mod hts;
+mod khash;
 pub mod kstring;
 pub mod sam;
 
