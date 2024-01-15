@@ -140,7 +140,9 @@ impl<K> KHashRaw<K> {
             self.keys = ptr::null_mut();
         }
     }
-    pub fn clear(&mut self) {
+
+    // Note, you must drop keys (and values for a Map) before doing this otherwise memory will be leaked
+    fn _clear(&mut self) {
         if !self.flags.is_null() {
             unsafe {
                 libc::memset(
@@ -151,8 +153,20 @@ impl<K> KHashRaw<K> {
             }
         }
     }
-    pub fn del(&mut self, x: KHInt) {
-        if x != self.n_buckets && !self.is_either(x) {
+
+    #[inline]
+    unsafe fn _drop_key(&mut self, i: KHInt) -> K {
+        ptr::read(self.keys.add(i as usize))
+    }
+
+    // Deletes a key from the hash
+
+    #[inline]
+    fn _del(&mut self, x: KHInt) {
+        if x < self.n_buckets && !self.is_either(x) {
+            unsafe {
+                let _ = self._drop_key(x);
+            }
             self.set_is_del_true(x);
             assert!(self.size > 0);
             self.size -= 1;
@@ -187,9 +201,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
         }
     }
     fn _find_entry<V>(&mut self, key: &K, vptr: Option<&mut *mut V>) -> Result<KHInt, KHashError> {
-        eprintln!("find_entry: {} {}", self.n_occupied, self.upper_bound);
         if self.n_occupied >= self.upper_bound {
-            eprintln!("Resizing");
             // Update hash table
             if self.n_buckets > (self.size << 1) {
                 // Clear "deleted" elements
@@ -198,14 +210,11 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                 // Expand hash table
                 self.resize(self.n_buckets + 1, vptr)?;
             }
-            eprintln!("n_buckets now {}", self.n_buckets);
         }
         let mask = self.n_buckets - 1;
         let k = K::hash(key);
         let mut i = k & mask;
-        eprintln!("k = {k}, mask = {mask}, i = {i}");
         let x = if self.is_empty(i) {
-            eprintln!("Empty!");
             i // for speed up
         } else {
             let mut site = self.n_buckets;
@@ -285,16 +294,11 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                 if !self.is_either(j) {
                     let new_mask = new_n_buckets - 1;
                     self.set_is_del_true(j);
-                    let mut key = unsafe {
-                        let mut k: mem::MaybeUninit<K> = mem::MaybeUninit::uninit();
-                        ptr::copy_nonoverlapping(self.keys.add(j as usize), k.as_mut_ptr(), 1);
-                        k.assume_init_read()
-                    };
+                    let mut key = unsafe { ptr::read(self.keys.add(j as usize)) };
 
                     let mut val = val_ptr.as_ref().map(|vptr| unsafe {
-                        let mut v: mem::MaybeUninit<V> = mem::MaybeUninit::uninit();
-                        ptr::copy_nonoverlapping((*vptr).add(j as usize), v.as_mut_ptr(), 1);
-                        (v.assume_init_read(), **vptr)
+                        let v = ptr::read((*vptr).add(j as usize));
+                        (v, **vptr)
                     });
                     loop {
                         let mut step = 0;
@@ -318,9 +322,9 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                             self.set_is_del_true(i);
                         } else {
                             // Write the element and break out of the loop
-                            unsafe { ptr::copy_nonoverlapping(&key, self.keys.add(i as usize), 1) }
+                            unsafe { ptr::write(self.keys.add(i as usize), key) }
                             if let Some((p, p1)) = val.take() {
-                                unsafe { ptr::copy_nonoverlapping(&p, p1.add(i as usize), 1) }
+                                unsafe { ptr::write(p1.add(i as usize), p) }
                             }
                             break;
                         }
@@ -376,6 +380,16 @@ impl<K, V> DerefMut for KHashMapRaw<K, V> {
 
 impl<K, V> KHashMapRaw<K, V> {
     fn free(&mut self) {
+        // Drop all keys and values
+        for i in 0..self.n_buckets {
+            if !self.is_either(i) {
+                unsafe {
+                    self._drop_key(i);
+                    let _ = self._drop_val(i);
+                }
+            }
+        }
+        self._clear();
         self.hash.free();
         unsafe { libc::free(self.vals as *mut c_void) };
         self.vals = ptr::null_mut();
@@ -391,6 +405,10 @@ impl<K, V> KHashMapRaw<K, V> {
         } else {
             None
         }
+    }
+    #[inline]
+    unsafe fn _drop_val(&mut self, i: KHInt) -> V {
+        ptr::read(self.vals.add(i as usize))
     }
 }
 
@@ -410,9 +428,23 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
         self._find(key).map(|idx| MapEntry { map: self, idx })
     }
     #[inline]
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self._find(key)
+            .map(|idx| unsafe { self.get_val_unchecked(idx) })
+    }
+
+    #[inline]
     pub fn insert(&mut self, key: K, val: V) -> Result<Option<V>, KHashError> {
         let idx = self.hash._find_entry(&key, Some(&mut self.vals))?;
         Ok(_insert_val(self, idx, key, val))
+    }
+
+    #[inline]
+    pub fn delete(&mut self, key: &K) -> Option<V> {
+        self._find(key).map(|idx| {
+            self._del(idx);
+            unsafe { self._drop_val(idx) }
+        })
     }
 }
 #[repr(C)]
@@ -458,6 +490,7 @@ impl<'a, K, V> DerefMut for KHashMap<'a, K, V> {
 
 impl<'a, K, V> Drop for KHashMap<'a, K, V> {
     fn drop(&mut self) {
+        eprintln!("Dropping KHashMap");
         self.free();
         unsafe {
             libc::free(self.inner as *mut c_void);
@@ -465,7 +498,7 @@ impl<'a, K, V> Drop for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K: KHashFunc + PartialEq, V: Default> KHashMap<'a, K, V> {
+impl<'a, K: KHashFunc + PartialEq, V> KHashMap<'a, K, V> {
     pub fn init() -> Self {
         let inner = unsafe {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
@@ -543,7 +576,7 @@ impl<'a, K, V> MapEntryMut<'a, K, V> {
     }
 
     #[inline]
-    pub fn insert(mut self, mut val: V) -> Option<V> {
+    pub fn insert(self, val: V) -> Option<V> {
         let i = self.idx;
         assert!(i < self.map.n_buckets);
         _insert_val(self.map, i, self.key, val)
@@ -552,12 +585,11 @@ impl<'a, K, V> MapEntryMut<'a, K, V> {
 
 fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) -> Option<V> {
     let fg = get_flag(map.flags, i);
-    eprintln!("Inserting: i={i}, fg={}", fg & 3);
     if (fg & 3) != 0 {
         // Either not present or deleted
         unsafe {
-            ptr::copy_nonoverlapping(&key, map.keys.add(i as usize), 1);
-            ptr::copy_nonoverlapping(&val, map.vals.add(i as usize), 1);
+            ptr::write(map.keys.add(i as usize), key);
+            ptr::write(map.vals.add(i as usize), val);
         }
         map.size += 1;
         if (fg & 2) != 0 {
@@ -571,7 +603,7 @@ fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) 
     }
 }
 
-impl KHashFunc for KHInt {
+impl KHashFunc for u32 {
     fn hash(&self) -> u32 {
         *self
     }
@@ -601,9 +633,42 @@ mod tests {
         assert_eq!(h.insert(98, c"String98")?, None);
         assert_eq!(h.insert(16384, c"String16384")?, None);
 
-        let m = h.find(&10).expect("Missing entry");
-        assert_eq!(m.value(), Some(&c"String10"));
+        assert_eq!(h.get(&10), Some(&c"String10"));
 
+        Ok(())
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct Test {
+        s: String,
+    }
+
+    impl Test {
+        fn new(s: &str) -> Self {
+            Self { s: s.to_string() }
+        }
+    }
+    impl Drop for Test {
+        fn drop(&mut self) {
+            eprintln!("Dropping {}", self.s);
+        }
+    }
+
+    #[test]
+    fn hash_u32_string() -> Result<(), KHashError> {
+        let mut h: KHashMap<KHInt, Test> = KHashMap::init();
+        assert_eq!(h.insert(42, Test::new("string1"))?, None);
+        assert_eq!(h.insert(64, Test::new("string2"))?, None);
+        assert_eq!(h.insert(1, Test::new("string3"))?, None);
+        assert_eq!(h.insert(73, Test::new("string4"))?, None);
+        assert_eq!(h.insert(1024, Test::new("string5"))?, None);
+        assert_eq!(
+            h.insert(64, Test::new("string6"))?,
+            Some(Test::new("string2"))
+        );
+        eprintln!("Removing key 1");
+        assert_eq!(h.delete(&1), Some(Test::new("string3")));
+        assert_eq!(h.insert(1, Test::new("string7"))?, None);
         Ok(())
     }
 }
