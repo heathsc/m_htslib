@@ -3,10 +3,10 @@ use std::{
     mem,
     ops::{Deref, DerefMut},
     ptr,
+    str::FromStr,
 };
 
-use crate::sam::{SamHdr, SamHdrRaw};
-use crate::KHashError;
+use crate::{kstring::KString, KHashError};
 use libc::{c_void, size_t};
 
 pub type KHInt = u32;
@@ -199,6 +199,10 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
         } else {
             None
         }
+    }
+    #[inline]
+    pub fn exists(&self, key: &K) -> bool {
+        self._find(key).is_some()
     }
     fn _find_entry<V>(&mut self, key: &K, vptr: Option<&mut *mut V>) -> Result<KHInt, KHashError> {
         if self.n_occupied >= self.upper_bound {
@@ -423,6 +427,7 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
                 key,
             })
     }
+
     #[inline]
     pub fn find(&self, key: &K) -> Option<MapEntry<K, V>> {
         self._find(key).map(|idx| MapEntry { map: self, idx })
@@ -464,6 +469,57 @@ impl<K> Deref for KHashSetRaw<K> {
 impl<K> DerefMut for KHashSetRaw<K> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut self.hash }
+    }
+}
+
+impl<K> KHashSetRaw<K> {
+    fn free(&mut self) {
+        // Drop all keys and values
+        for i in 0..self.n_buckets {
+            if !self.is_either(i) {
+                unsafe {
+                    self._drop_key(i);
+                }
+            }
+        }
+        self._clear();
+        self.hash.free();
+    }
+}
+
+impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
+    #[inline]
+    pub fn find(&self, key: &K) -> Option<KHInt> {
+        self._find(key)
+    }
+
+    pub fn insert(&mut self, key: K) -> Result<bool, KHashError> {
+        let n: Option<&mut *mut u8> = None; // Dummy just to get the write annotation for V
+        let idx = self.hash._find_entry(&key, n)?;
+        let fg = get_flag(self.flags, idx);
+        Ok(if (fg & 3) != 0 {
+            // Either not present or deleted
+            unsafe {
+                ptr::write(self.keys.add(idx as usize), key);
+            }
+            self.size += 1;
+            if (fg & 2) != 0 {
+                self.n_occupied += 1;
+            }
+            set_is_both_false(self.flags, idx);
+            false
+        } else {
+            true
+        })
+    }
+
+    pub fn delete(&mut self, key: &K) -> bool {
+        self._find(key)
+            .map(|idx| {
+                self._del(idx);
+                true
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -537,6 +593,18 @@ impl<'a, K> Drop for KHashSet<'a, K> {
         self.free();
         unsafe {
             libc::free(self.inner as *mut c_void);
+        }
+    }
+}
+
+impl<'a, K: KHashFunc + PartialEq> KHashSet<'a, K> {
+    pub fn init() -> Self {
+        let inner =
+            unsafe { libc::calloc(1, mem::size_of::<KHashSetRaw<K>>()) as *mut KHashSetRaw<K> };
+        assert!(!inner.is_null(), "Out of memory error");
+        Self {
+            inner,
+            phantom: PhantomData,
         }
     }
 }
@@ -635,6 +703,41 @@ impl KHashFunc for *const libc::c_char {
     }
 }
 
+impl KHashFunc for KString {
+    #[inline]
+    fn hash(&self) -> u32 {
+        self.as_slice().map(|p| hash_u8_slice(p)).unwrap_or(0)
+    }
+}
+
+#[inline]
+fn hash_u8_slice(p: &[u8]) -> u32 {
+    p[1..].iter().fold(p[0] as u32, |h, x| {
+        (h >> 5).overflowing_sub(h).0 + (*x as u32)
+    })
+}
+
+impl KHashFunc for &[u8] {
+    #[inline]
+    fn hash(&self) -> u32 {
+        hash_u8_slice(self)
+    }
+}
+
+impl KHashFunc for &str {
+    #[inline]
+    fn hash(&self) -> u32 {
+        hash_u8_slice(self.as_bytes())
+    }
+}
+
+impl KHashFunc for String {
+    #[inline]
+    fn hash(&self) -> u32 {
+        hash_u8_slice(self.as_bytes())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,15 +785,12 @@ mod tests {
 
     impl KHashFunc for Test {
         fn hash(&self) -> u32 {
-            let p = self.s.as_bytes();
-            p[1..].iter().fold(p[0] as u32, |h, x| {
-                (h >> 5).overflowing_sub(h).0 + (*x as u32)
-            })
+            hash_u8_slice(self.s.as_bytes())
         }
     }
 
     #[test]
-    fn hash_u32_string() -> Result<(), KHashError> {
+    fn hash_int_string() -> Result<(), KHashError> {
         let mut h = KHashMap::init();
         assert_eq!(h.insert(42u32, Test::new("string1"))?, None);
         assert_eq!(h.insert(64, Test::new("string2"))?, None);
@@ -708,11 +808,52 @@ mod tests {
     }
 
     #[test]
-    fn hash_tstring_u32() -> Result<(), KHashError> {
+    fn hash_tstring() -> Result<(), KHashError> {
         let mut h = KHashMap::init();
         assert_eq!(h.insert(Test::new("key1"), 42)?, None);
         assert_eq!(h.insert(Test::new("key2"), 76)?, None);
         assert_eq!(h.insert(Test::new("key1"), 21)?, Some(42));
+        Ok(())
+    }
+
+    #[test]
+    fn hash_kstring() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        let mut ks = KString::from_str("key1").unwrap();
+        assert_eq!(h.insert(ks, 42)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn hash_str() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert("key1", 42)?, None);
+        assert_eq!(h.insert("key2", 76)?, None);
+        assert_eq!(h.insert("key1", 21)?, Some(42));
+        Ok(())
+    }
+
+    #[test]
+    fn set_int() -> Result<(), KHashError> {
+        let mut h = KHashSet::init();
+        assert_eq!(h.insert(42u32)?, false);
+        assert_eq!(h.insert(64)?, false);
+        assert_eq!(h.insert(1)?, false);
+        assert_eq!(h.insert(73)?, false);
+        assert_eq!(h.insert(1024)?, false);
+        assert_eq!(h.insert(64)?, true);
+        eprintln!("Removing key 1");
+        assert_eq!(h.delete(&1), true);
+        assert_eq!(h.insert(1)?, false);
+        Ok(())
+    }
+
+    #[test]
+    fn set_tstring() -> Result<(), KHashError> {
+        let mut h = KHashSet::init();
+        assert_eq!(h.insert(Test::new("key1"))?, false);
+        assert_eq!(h.insert(Test::new("key2"))?, false);
+        assert_eq!(h.insert(Test::new("key1"))?, true);
         Ok(())
     }
 }
