@@ -1,4 +1,4 @@
-use std::{ffi::CStr, ptr};
+use std::{ffi::CStr, ptr, str::FromStr};
 
 use crate::error::KStringError;
 use libc::{c_char, c_void, size_t};
@@ -10,6 +10,18 @@ pub struct KString {
     m: size_t,
     s: *mut c_char,
 }
+
+impl PartialEq for KString {
+    fn eq(&self, other: &Self) -> bool {
+        self.l == other.l
+            && (self.l == 0
+                || !unsafe {
+                    libc::memcmp(self.s as *const c_void, other.s as *const c_void, self.l) == 0
+                })
+    }
+}
+
+impl Eq for KString {}
 
 /// Because this has to interact with htslib which can alloc or free the storage
 /// we need to use malloc/free from libc for all memory handling
@@ -50,7 +62,7 @@ impl KString {
     pub fn clear(&mut self) {
         self.l = 0
     }
-
+    
     pub fn resize(&mut self, size: size_t) -> Result<(), KStringError> {
         if self.m < size {
             let size = if size > (usize::MAX >> 2) {
@@ -154,6 +166,16 @@ impl KString {
 
     pub fn as_slice_mut_with_null(&mut self) -> Option<&mut [u8]> {
         self._as_slice_mut(true)
+    }
+}
+
+impl FromStr for KString {
+    type Err = KStringError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut ks = Self::default();
+        ks.putsn(s.as_bytes())?;
+        Ok(ks)
     }
 }
 
