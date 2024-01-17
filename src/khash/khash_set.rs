@@ -36,7 +36,7 @@ impl<K> KHashSetRaw<K> {
     fn free(&mut self) {
         // Drop all keys and values
         for i in 0..self.n_buckets() {
-            if !self.is_either(i) {
+            if !self.is_bin_either(i) {
                 unsafe {
                     self._drop_key(i);
                 }

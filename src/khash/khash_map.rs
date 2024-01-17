@@ -36,7 +36,7 @@ impl<K, V> KHashMapRaw<K, V> {
     fn free(&mut self) {
         // Drop all keys and values
         for i in 0..self.n_buckets() {
-            if !self.is_either(i) {
+            if !self.is_bin_either(i) {
                 unsafe {
                     self._drop_key(i);
                     let _ = self._drop_val(i);
@@ -60,7 +60,7 @@ impl<K, V> KHashMapRaw<K, V> {
 
     #[inline]
     pub fn get_val(&self, i: u32) -> Option<&V> {
-        if i < self.n_buckets() && !self.is_either(i) {
+        if i < self.n_buckets() && !self.is_bin_either(i) {
             Some(unsafe { &*self.vals.add(i as usize) })
         } else {
             None
@@ -254,7 +254,7 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
         let mut x = None;
 
         while self.idx < nb && x.is_none() {
-            let empty = map.is_either(self.idx);
+            let empty = map.is_bin_either(self.idx);
             if !empty {
                 unsafe {
                     let k = map.get_key_unchecked(self.idx);
@@ -268,8 +268,8 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let map = unsafe { self.as_ref() };
-        (0, Some(map.n_buckets() as usize))
+        let len = unsafe { self.as_ref() }.len() as usize;
+        (len, Some(len))
     }
 }
 
@@ -303,7 +303,7 @@ impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
         let mut x = None;
 
         while self.idx < nb {
-            let empty = map.is_either(self.idx);
+            let empty = map.is_bin_either(self.idx);
             if !empty {
                 unsafe {
                     let k = &*keys.add(self.idx as usize);
@@ -319,8 +319,8 @@ impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let map = unsafe { self.as_ref() };
-        (0, Some(map.n_buckets() as usize))
+        let len = unsafe { self.as_ref() }.len() as usize;
+        (len, Some(len))
     }
 }
 

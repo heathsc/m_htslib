@@ -88,38 +88,38 @@ impl<K> KHashRaw<K> {
 
     #[inline]
     pub fn get_key(&self, i: u32) -> Option<&K> {
-        if i < self.n_buckets && !self.is_either(i) {
+        if i < self.n_buckets && !self.is_bin_either(i) {
             Some(unsafe { &*self.keys.add(i as usize) })
         } else {
             None
         }
     }
     #[inline]
-    pub(super) fn is_del(&self, i: u32) -> bool {
+    pub(super) fn is_bin_del(&self, i: u32) -> bool {
         is_del(self.flags, i)
     }
     #[inline]
-    pub(super) fn is_empty(&self, i: u32) -> bool {
+    pub(super) fn is_bin_empty(&self, i: u32) -> bool {
         is_empty(self.flags, i)
     }
     #[inline]
-    pub(super) fn is_either(&self, i: u32) -> bool {
+    pub(super) fn is_bin_either(&self, i: u32) -> bool {
         is_either(self.flags, i)
     }
     #[inline]
-    pub(super) fn set_is_del_false(&mut self, i: u32) {
+    pub(super) fn set_is_bin_del_false(&mut self, i: u32) {
         set_is_del_false(self.flags, i)
     }
     #[inline]
-    pub(super) fn set_is_empty_false(&mut self, i: u32) {
+    pub(super) fn set_is_bin_empty_false(&mut self, i: u32) {
         set_is_empty_false(self.flags, i)
     }
     #[inline]
-    pub(super) fn set_is_both_false(&mut self, i: u32) {
+    pub(super) fn set_is_bin_both_false(&mut self, i: u32) {
         set_is_both_false(self.flags, i)
     }
     #[inline]
-    pub(super) fn set_is_del_true(&mut self, i: u32) {
+    pub(super) fn set_is_bin_del_true(&mut self, i: u32) {
         set_is_del_true(self.flags, i)
     }
 
@@ -155,11 +155,11 @@ impl<K> KHashRaw<K> {
 
     #[inline]
     pub(super) fn _del(&mut self, x: KHInt) {
-        if x < self.n_buckets && !self.is_either(x) {
+        if x < self.n_buckets && !self.is_bin_either(x) {
             unsafe {
                 let _ = self._drop_key(x);
             }
-            self.set_is_del_true(x);
+            self.set_is_bin_del_true(x);
             assert!(self.size > 0);
             self.size -= 1;
         }
@@ -169,6 +169,14 @@ impl<K> KHashRaw<K> {
         self.n_buckets
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.n_occupied == 0
+    }
+    #[inline]
+    pub fn len(&self) -> KHInt {
+        self.n_occupied
+    }
     #[inline]
     pub(super) fn flags(&mut self) -> *mut u32 {
         self.flags
@@ -203,8 +211,8 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             let k = K::hash(key);
             let mut i = k & mask;
             let last = i;
-            while !self.is_empty(i)
-                && (self.is_del(i) || key != unsafe { self.get_key_unchecked(i) })
+            while !self.is_bin_empty(i)
+                && (self.is_bin_del(i) || key != unsafe { self.get_key_unchecked(i) })
             {
                 step += 1;
                 i = (i + step) & mask;
@@ -212,7 +220,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                     return None;
                 }
             }
-            if self.is_either(i) {
+            if self.is_bin_either(i) {
                 None
             } else {
                 Some(i)
@@ -243,17 +251,17 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
         let mask = self.n_buckets - 1;
         let k = K::hash(key);
         let mut i = k & mask;
-        let x = if self.is_empty(i) {
+        let x = if self.is_bin_empty(i) {
             i // for speed up
         } else {
             let mut site = self.n_buckets;
             let mut x = site;
             let last = i;
             let mut step = 0;
-            while !self.is_empty(i)
-                && (self.is_del(i) || key != unsafe { self.get_key_unchecked(i) })
+            while !self.is_bin_empty(i)
+                && (self.is_bin_del(i) || key != unsafe { self.get_key_unchecked(i) })
             {
-                if self.is_del(i) {
+                if self.is_bin_del(i) {
                     site = i
                 }
                 step += 1;
@@ -264,7 +272,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                 }
             }
             if x == self.n_buckets {
-                if self.is_empty(i) && site != self.n_buckets {
+                if self.is_bin_empty(i) && site != self.n_buckets {
                     x = site
                 } else {
                     x = i
@@ -320,9 +328,9 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             // Rehashing is required
             let nb = self.n_buckets;
             for j in 0..nb {
-                if !self.is_either(j) {
+                if !self.is_bin_either(j) {
                     let new_mask = new_n_buckets - 1;
-                    self.set_is_del_true(j);
+                    self.set_is_bin_del_true(j);
                     let mut key = unsafe { ptr::read(self.keys.add(j as usize)) };
 
                     let mut val = val_ptr.as_ref().map(|vptr| unsafe {
@@ -348,7 +356,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                                 val = Some((p, p1))
                             }
                             // Mark as deleted in old hash table
-                            self.set_is_del_true(i);
+                            self.set_is_bin_del_true(i);
                         } else {
                             // Write the element and break out of the loop
                             unsafe { ptr::write(self.keys.add(i as usize), key) }
