@@ -143,6 +143,33 @@ impl<'a, K> KHashSet<'a, K> {
     }
 }
 
+impl<'a, K> IntoIterator for &KHashSet<'a, K> {
+    type Item = &'a K;
+    type IntoIter = KIter<'a, K>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        KIter::make(&self.hash as *const KHashRaw<K>)
+    }
+}
+
+impl<'a, K> IntoIterator for &mut KHashSet<'a, K> {
+    type Item = &'a K;
+    type IntoIter = KIter<'a, K>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        KIter::make(&self.hash as *const KHashRaw<K>)
+    }
+}
+
+impl<'a, K> IntoIterator for KHashSet<'a, K> {
+    type Item = K;
+    type IntoIter = KIntoKeys<K>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_keys()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,6 +203,18 @@ mod tests {
         assert_eq!(h.insert("key1")?, false);
         assert_eq!(h.insert("key2")?, false);
         assert_eq!(h.insert("key1")?, true);
+
+        for k in &h {
+            eprintln!("{}", k);
+        }
+
+        for k in &mut h {
+            eprintln!("{}", k);
+        }
+
+        for k in h {
+            eprintln!("{}", k);
+        }
         Ok(())
     }
 }

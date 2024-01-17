@@ -208,65 +208,38 @@ impl<'a, K, V> KHashMap<'a, K, V> {
     }
 }
 
-pub struct MapEntry<'a, K, V> {
-    map: &'a KHashMapRaw<K, V>,
-    idx: KHInt,
-}
+impl<'a, K, V> IntoIterator for &KHashMap<'a, K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = KIterMap<'a, K, V>;
 
-impl<'a, K, V> MapEntry<'a, K, V> {
-    #[inline]
-    pub fn idx(&self) -> KHInt {
-        self.idx
-    }
-
-    #[inline]
-    pub fn value(&self) -> Option<&V> {
-        self.map.get_val(self.idx)
-    }
-
-    #[inline]
-    pub fn key(&self) -> Option<&K> {
-        self.map.get_key(self.idx)
-    }
-}
-
-pub struct MapEntryMut<'a, K, V> {
-    map: &'a mut KHashMapRaw<K, V>,
-    key: K,
-    idx: KHInt,
-}
-
-impl<'a, K, V> MapEntryMut<'a, K, V> {
-    #[inline]
-    pub fn idx(&self) -> KHInt {
-        self.idx
-    }
-
-    #[inline]
-    pub fn insert(self, val: V) -> Option<V> {
-        let i = self.idx;
-        assert!(i < self.map.n_buckets());
-        _insert_val(self.map, i, self.key, val)
-    }
-}
-
-fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) -> Option<V> {
-    let fg = get_flag(map.flags(), i);
-    if (fg & 3) != 0 {
-        // Either not present or deleted
-        unsafe {
-            ptr::write(map.keys_ptr_mut().add(i as usize), key);
-            ptr::write(map.vals.add(i as usize), val);
+    fn into_iter(self) -> Self::IntoIter {
+        KIterMap {
+            map: self.inner,
+            idx: 0,
+            phantom: PhantomData,
         }
-        map.inc_size();
-        if (fg & 2) != 0 {
-            map.inc_n_occupied();
+    }
+}
+
+impl<'a, K, V> IntoIterator for &mut KHashMap<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
+    type IntoIter = KIterMapMut<'a, K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        KIterMapMut {
+            map: self.inner,
+            idx: 0,
+            phantom: PhantomData,
         }
-        set_is_both_false(map.flags(), i);
-        None
-    } else {
-        unsafe { ptr::swap(&mut val, map.vals.add(i as usize)) }
-        Some(val)
+    }
+}
+
+impl<'a, K, V> IntoIterator for KHashMap<'a, K, V> {
+    type Item = (K, V);
+    type IntoIter = KIntoIter<K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_iter()
     }
 }
 
@@ -513,6 +486,68 @@ impl<'a, K, V> Drop for KDrainMap<'a, K, V> {
     }
 }
 
+pub struct MapEntry<'a, K, V> {
+    map: &'a KHashMapRaw<K, V>,
+    idx: KHInt,
+}
+
+impl<'a, K, V> MapEntry<'a, K, V> {
+    #[inline]
+    pub fn idx(&self) -> KHInt {
+        self.idx
+    }
+
+    #[inline]
+    pub fn value(&self) -> Option<&V> {
+        self.map.get_val(self.idx)
+    }
+
+    #[inline]
+    pub fn key(&self) -> Option<&K> {
+        self.map.get_key(self.idx)
+    }
+}
+
+pub struct MapEntryMut<'a, K, V> {
+    map: &'a mut KHashMapRaw<K, V>,
+    key: K,
+    idx: KHInt,
+}
+
+impl<'a, K, V> MapEntryMut<'a, K, V> {
+    #[inline]
+    pub fn idx(&self) -> KHInt {
+        self.idx
+    }
+
+    #[inline]
+    pub fn insert(self, val: V) -> Option<V> {
+        let i = self.idx;
+        assert!(i < self.map.n_buckets());
+        _insert_val(self.map, i, self.key, val)
+    }
+}
+
+fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) -> Option<V> {
+    let fg = get_flag(map.flags(), i);
+    if (fg & 3) != 0 {
+        // Either not present or deleted
+        unsafe {
+            ptr::write(map.keys_ptr_mut().add(i as usize), key);
+            ptr::write(map.vals.add(i as usize), val);
+        }
+        map.inc_size();
+        if (fg & 2) != 0 {
+            map.inc_n_occupied();
+        }
+        set_is_both_false(map.flags(), i);
+        None
+    } else {
+        unsafe { ptr::swap(&mut val, map.vals.add(i as usize)) }
+        Some(val)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,6 +640,10 @@ mod tests {
 
         assert_eq!(h.delete(&1), Some(Test::new("string3")));
         assert_eq!(h.insert(1, Test::new("string7"))?, None);
+
+        for (k, v) in &mut h {
+            eprintln!("{} {:?}", k, v)
+        }
 
         Ok(())
     }

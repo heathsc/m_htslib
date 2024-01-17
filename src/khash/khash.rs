@@ -459,6 +459,11 @@ impl<'a, K> KIter<'a, K> {
     unsafe fn as_ref(&self) -> &'a KHashRaw<K> {
         &*self.map
     }
+    pub(super) fn make(map: *const KHashRaw<K>) -> Self {
+        Self {
+            map, idx: 0, phantom: PhantomData
+        }
+    }
 }
 impl<'a, K> Iterator for KIter<'a, K> {
     type Item = &'a K;
