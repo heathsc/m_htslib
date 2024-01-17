@@ -137,6 +137,10 @@ impl<'a, K> KHashSet<'a, K> {
         self.inner = ptr::null_mut();
         map.into_keys()
     }
+    #[inline]
+    pub fn into_iter(mut self) -> KIntoKeys<K> {
+        self.into_keys()
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +162,11 @@ mod tests {
 
         // Test keys iterator
         assert_eq!(h.iter().nth(1), Some(&1));
+
+        // Test drain iterator
+        assert_eq!(h.drain().nth(1), Some(1));
+        assert!(h.is_empty());
+
         Ok(())
     }
 

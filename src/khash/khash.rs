@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::{fmt::Debug, mem, ptr};
 
 use super::khash_func::*;
+use crate::khash::KIterMapMut;
 use crate::KHashError;
 use libc::{c_void, size_t};
 
@@ -83,13 +84,7 @@ pub struct KHashRaw<K> {
 
 impl<K> Drop for KHashRaw<K> {
     fn drop(&mut self) {
-        for i in 0..self.n_buckets() {
-            if !self.is_bin_either(i) {
-                unsafe {
-                    self._drop_key(i);
-                }
-            }
-        }
+        self._drop_keys();
         self.free();
     }
 }
@@ -157,9 +152,20 @@ impl<K> KHashRaw<K> {
                     fsize(self.n_buckets) * mem::size_of::<u32>(),
                 );
             }
+            self.n_occupied = 0;
+            self.size = 0;
         }
     }
-
+    #[inline]
+    pub(super) fn _drop_keys(&mut self) {
+        for i in 0..self.n_buckets() {
+            if !self.is_bin_either(i) {
+                unsafe {
+                    self._drop_key(i);
+                }
+            }
+        }
+    }
     #[inline]
     pub(super) unsafe fn _drop_key(&mut self, i: KHInt) -> K {
         ptr::read(self.keys.add(i as usize))
@@ -185,11 +191,11 @@ impl<K> KHashRaw<K> {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.n_occupied == 0
+        self.size == 0
     }
     #[inline]
     pub fn len(&self) -> KHInt {
-        self.n_occupied
+        self.size
     }
     #[inline]
     pub(super) fn flags(&mut self) -> *mut u32 {
@@ -216,15 +222,19 @@ impl<K> KHashRaw<K> {
     }
     #[inline]
     pub fn into_keys(self) -> KIntoKeys<K> {
-        KIntoKeys {
-            map: self,
-            idx: 0,
-            phantom: PhantomData,
-        }
+        KIntoKeys { map: self, idx: 0 }
     }
     #[inline]
     pub(super) fn keys_ptr_mut(&mut self) -> *mut K {
         self.keys
+    }
+    #[inline]
+    pub fn drain(&mut self) -> KDrain<K> {
+        KDrain {
+            map: self,
+            idx: 0,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -434,7 +444,7 @@ impl<K> KIterFunc for KHashRaw<K> {
     }
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let s = self.n_occupied as usize;
+        let s = self.size as usize;
         (s, Some(s))
     }
 }
@@ -478,7 +488,6 @@ impl<'a, K> Iterator for KIter<'a, K> {
 pub struct KIntoKeys<K> {
     map: KHashRaw<K>,
     idx: KHInt,
-    phantom: PhantomData<KHashRaw<K>>,
 }
 
 impl<K> Iterator for KIntoKeys<K> {
@@ -503,5 +512,56 @@ impl<K> Iterator for KIntoKeys<K> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         unsafe { self.map.size_hint() }
+    }
+}
+
+pub struct KDrain<'a, K> {
+    map: *mut KHashRaw<K>,
+    idx: KHInt,
+    phantom: PhantomData<&'a KHashRaw<K>>,
+}
+
+impl<'a, K> KDrain<'a, K> {
+    unsafe fn as_ref(&self) -> &'a KHashRaw<K> {
+        &*self.map
+    }
+    unsafe fn as_mut(&mut self) -> &'a mut KHashRaw<K> {
+        &mut *self.map
+    }
+}
+impl<'a, K> Iterator for KDrain<'a, K> {
+    type Item = K;
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = unsafe { self.as_mut() };
+        let keys = map.keys_ptr();
+        let nb = map.n_buckets();
+        let mut x = None;
+
+        while self.idx < nb {
+            let empty = map.is_bin_either(self.idx);
+            if !empty {
+                unsafe {
+                    x = Some(unsafe { ptr::read(keys.add(self.idx as usize)) });
+                    map.set_is_bin_del_true(self.idx);
+                    self.idx += 1;
+                    break;
+                }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.as_ref().size_hint() }
+    }
+}
+
+impl<'a, K> Drop for KDrain<'a, K> {
+    fn drop(&mut self) {
+        let map = unsafe { self.as_mut() };
+        map._drop_keys();
+        map._clear();
     }
 }

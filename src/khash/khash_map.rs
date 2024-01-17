@@ -34,6 +34,19 @@ impl<K, V> DerefMut for KHashMapRaw<K, V> {
 
 impl<K, V> Drop for KHashMapRaw<K, V> {
     fn drop(&mut self) {
+        self.free_vals()
+    }
+}
+
+impl<K, V> KHashMapRaw<K, V> {
+    fn free_vals(&mut self) {
+        if !self.vals.is_null() {
+            self.drop_vals();
+            unsafe { libc::free(self.vals as *mut c_void) };
+            self.vals = ptr::null_mut();
+        }
+    }
+    fn drop_vals(&mut self) {
         for i in 0..self.n_buckets() {
             if !self.is_bin_either(i) {
                 unsafe {
@@ -41,12 +54,7 @@ impl<K, V> Drop for KHashMapRaw<K, V> {
                 }
             }
         }
-        unsafe { libc::free(self.vals as *mut c_void) };
-        self.vals = ptr::null_mut();
     }
-}
-
-impl<K, V> KHashMapRaw<K, V> {
     #[inline]
     unsafe fn get_val_unchecked(&self, i: u32) -> &V {
         &*self.vals.add(i as usize)
@@ -83,6 +91,12 @@ impl<K, V> KHashMapRaw<K, V> {
             map: self as *mut KHashMapRaw<K, V>,
             idx: 0,
             phantom: PhantomData,
+        }
+    }
+    #[inline]
+    pub fn drain(&mut self) -> KDrainMap<K, V> {
+        KDrainMap {
+            inner: self.iter_mut(),
         }
     }
     #[inline]
@@ -175,8 +189,22 @@ impl<'a, K, V> KHashMap<'a, K, V> {
     #[inline]
     pub fn into_keys(mut self) -> KIntoKeys<K> {
         let mut khash = unsafe { ptr::read(&self.hash) };
+        self.free_vals();
         self.inner = ptr::null_mut();
         khash.into_keys()
+    }
+
+    #[inline]
+    pub fn into_values(mut self) -> KIntoValues<K, V> {
+        let mut map = unsafe { ptr::read(self.inner) };
+        self.inner = ptr::null_mut();
+        KIntoValues { map, idx: 0 }
+    }
+    #[inline]
+    pub fn into_iter(mut self) -> KIntoIter<K, V> {
+        let mut map = unsafe { ptr::read(self.inner) };
+        self.inner = ptr::null_mut();
+        KIntoIter { map, idx: 0 }
     }
 }
 
@@ -364,6 +392,127 @@ impl<'a, K, V> Iterator for KIterVal<'a, K, V> {
     }
 }
 
+pub struct KIntoIter<K, V> {
+    map: KHashMapRaw<K, V>,
+    idx: KHInt,
+}
+
+impl<K, V> Iterator for KIntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = &mut self.map;
+        let nb = map.n_buckets();
+        let keys = map.keys_ptr();
+        let mut x = None;
+
+        while self.idx < nb {
+            let empty = map.is_bin_either(self.idx);
+            if !empty {
+                unsafe {
+                    // Drop key
+                    let k = unsafe { ptr::read(keys.add(self.idx as usize)) };
+                    // Take value
+                    let v = unsafe { ptr::read(map.vals.add(self.idx as usize)) };
+                    x = Some((k, v));
+                    map.set_is_bin_del_true(self.idx);
+                    self.idx += 1;
+                    break;
+                }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.map.size_hint() }
+    }
+}
+
+pub struct KIntoValues<K, V> {
+    map: KHashMapRaw<K, V>,
+    idx: KHInt,
+}
+
+impl<K, V> Iterator for KIntoValues<K, V> {
+    type Item = V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = &mut self.map;
+        let nb = map.n_buckets();
+        let keys = map.keys_ptr();
+        let mut x = None;
+
+        while self.idx < nb {
+            let empty = map.is_bin_either(self.idx);
+            if !empty {
+                unsafe {
+                    // Drop key
+                    let _ = unsafe { ptr::read(keys.add(self.idx as usize)) };
+                    // Take value
+                    x = Some(unsafe { ptr::read(map.vals.add(self.idx as usize)) });
+                    map.set_is_bin_del_true(self.idx);
+                    self.idx += 1;
+                    break;
+                }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.map.size_hint() }
+    }
+}
+
+pub struct KDrainMap<'a, K, V> {
+    inner: KIterMapMut<'a, K, V>,
+}
+
+impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
+    type Item = (K, V);
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = unsafe { self.inner.as_mut() };
+        let keys = map.keys_ptr();
+        let nb = map.n_buckets();
+        let mut x = None;
+
+        while self.inner.idx < nb {
+            let empty = map.is_bin_either(self.inner.idx);
+            if !empty {
+                unsafe {
+                    let k = unsafe { ptr::read(keys.add(self.inner.idx as usize)) };
+                    let v = unsafe { ptr::read(map.vals.add(self.inner.idx as usize)) };
+                    map.set_is_bin_del_true(self.inner.idx);
+                    x = Some((k, v));
+                    self.inner.idx += 1;
+                    break;
+                }
+            }
+            self.inner.idx += 1;
+        }
+        x
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.inner.size_hint() }
+    }
+}
+
+impl<'a, K, V> Drop for KDrainMap<'a, K, V> {
+    fn drop(&mut self) {
+        let map = unsafe { self.inner.as_mut() };
+        map.drop_vals();
+        map._drop_keys();
+        map._clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +551,19 @@ mod tests {
         // Test values iterator
         let v = h.values().nth(5);
         assert_eq!(v, Some(&c"String20_changed"));
+
+        // Test delete
+        assert_eq!(h.len(), 10);
+        let v = h.delete(&20).unwrap();
+        assert_eq!(v, c"String20_changed");
+        assert_eq!(h.len(), 9);
+        assert_eq!(h.get(&20), None);
+
+        // Test drain iterator
+        let (v, k) = h.drain().nth(3).unwrap();
+        assert_eq!(v, 2);
+        // Hash is empty after drain
+        assert!(h.is_empty());
 
         Ok(())
     }
@@ -443,6 +605,7 @@ mod tests {
 
         assert_eq!(h.delete(&1), Some(Test::new("string3")));
         assert_eq!(h.insert(1, Test::new("string7"))?, None);
+
         Ok(())
     }
 
@@ -478,6 +641,64 @@ mod tests {
 
         // Test keys iterator
         assert_eq!(h.keys().next(), Some(&"key1"));
+        Ok(())
+    }
+
+    #[test]
+    fn hash_tstring2() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(Test::new("key1"), Test::new("val1"))?, None);
+        assert_eq!(h.insert(Test::new("key2"), Test::new("val2"))?, None);
+        assert_eq!(h.insert(Test::new("key3"), Test::new("val3"))?, None);
+        assert_eq!(h.insert(Test::new("key4"), Test::new("val4"))?, None);
+        assert_eq!(h.insert(Test::new("key5"), Test::new("val5"))?, None);
+
+        assert_eq!(h.into_keys().nth(3).unwrap(), Test::new("key4"));
+        Ok(())
+    }
+
+    #[test]
+    fn hash_tstring3() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
+        assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
+        assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
+        assert_eq!(h.insert(Test::new("keyB"), Test::new("val4"))?, None);
+        assert_eq!(h.insert(Test::new("keyA"), Test::new("val5"))?, None);
+
+        assert_eq!(h.into_values().nth(3).unwrap(), Test::new("val2"));
+        Ok(())
+    }
+
+    #[test]
+    fn hash_tstring4() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
+        assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
+        assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
+        assert_eq!(h.insert(Test::new("keyB"), Test::new("val4"))?, None);
+        assert_eq!(h.insert(Test::new("keyA"), Test::new("val5"))?, None);
+
+        assert_eq!(
+            h.drain().nth(3).unwrap(),
+            (Test::new("keyD"), Test::new("val2"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn hash_tstring5() -> Result<(), KHashError> {
+        let mut h = KHashMap::init();
+        assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
+        assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
+        assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
+        assert_eq!(h.insert(Test::new("keyB"), Test::new("val4"))?, None);
+        assert_eq!(h.insert(Test::new("keyA"), Test::new("val5"))?, None);
+
+        assert_eq!(
+            h.into_iter().nth(3).unwrap(),
+            (Test::new("keyD"), Test::new("val2"))
+        );
         Ok(())
     }
 }
