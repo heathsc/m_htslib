@@ -60,7 +60,7 @@ impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
         Ok(if (fg & 3) != 0 {
             // Either not present or deleted
             unsafe {
-                ptr::write(self.keys().add(idx as usize), key);
+                ptr::write(self.keys_mut().add(idx as usize), key);
             }
             self.inc_size();
             if (fg & 2) != 0 {

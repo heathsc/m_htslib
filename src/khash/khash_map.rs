@@ -52,6 +52,12 @@ impl<K, V> KHashMapRaw<K, V> {
     unsafe fn get_val_unchecked(&self, i: u32) -> &V {
         &*self.vals.add(i as usize)
     }
+
+    #[inline]
+    unsafe fn get_val_unchecked_mut(&mut self, i: u32) -> &mut V {
+        &mut *self.vals.add(i as usize)
+    }
+
     #[inline]
     pub fn get_val(&self, i: u32) -> Option<&V> {
         if i < self.n_buckets() && !self.is_either(i) {
@@ -153,6 +159,14 @@ impl<'a, K, V> KHashMap<'a, K, V> {
             phantom: PhantomData,
         }
     }
+
+    pub fn iter_mut(&self) -> KIterMapMut<'a, K, V> {
+        KIterMapMut {
+            map: self.inner,
+            idx: 0,
+            phantom: PhantomData,
+        }
+    }
 }
 
 pub struct MapEntry<'a, K, V> {
@@ -202,7 +216,7 @@ fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) 
     if (fg & 3) != 0 {
         // Either not present or deleted
         unsafe {
-            ptr::write(map.keys().add(i as usize), key);
+            ptr::write(map.keys_mut().add(i as usize), key);
             ptr::write(map.vals.add(i as usize), val);
         }
         map.inc_size();
@@ -222,6 +236,7 @@ pub struct KIterMap<'a, K, V> {
     idx: KHInt,
     phantom: PhantomData<&'a KHashMapRaw<K, V>>,
 }
+
 impl<'a, K, V> KIterMap<'a, K, V> {
     unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
         {
@@ -245,6 +260,57 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
                     let k = map.get_key_unchecked(self.idx);
                     let v = map.get_val_unchecked(self.idx);
                     x = Some((k, v))
+                }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let map = unsafe { self.as_ref() };
+        (0, Some(map.n_buckets() as usize))
+    }
+}
+
+pub struct KIterMapMut<'a, K, V> {
+    map: *mut KHashMapRaw<K, V>,
+    idx: KHInt,
+    phantom: PhantomData<&'a KHashMapRaw<K, V>>,
+}
+
+impl<'a, K, V> KIterMapMut<'a, K, V> {
+    unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
+        {
+            &*self.map
+        }
+    }
+
+    unsafe fn as_mut(&self) -> &'a mut KHashMapRaw<K, V> {
+        {
+            &mut *self.map
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = unsafe { self.as_mut() };
+        let keys = map.keys();
+        let nb = map.n_buckets();
+        let mut x = None;
+
+        while self.idx < nb {
+            let empty = map.is_either(self.idx);
+            if !empty {
+                unsafe {
+                    let k = &*keys.add(self.idx as usize);
+                    let v = map.get_val_unchecked_mut(self.idx);
+                    x = Some((k, v));
+                    self.idx += 1;
+                    break;
                 }
             }
             self.idx += 1;
@@ -284,8 +350,15 @@ mod tests {
 
         assert_eq!(h.get(&10), Some(&c"String10"));
 
+        // Test iterator
         let (k, v) = h.iter().nth(5).unwrap();
         assert_eq!((*k, *v), (20, c"String20"));
+
+        // Test mutable iterator
+        let (k, v) = h.iter_mut().nth(5).unwrap();
+        *v = c"String20_changed";
+        assert_eq!(h.get(&20), Some(&c"String20_changed"));
+
         Ok(())
     }
 

@@ -85,6 +85,7 @@ impl<K> KHashRaw<K> {
     pub(super) unsafe fn get_key_unchecked(&self, i: u32) -> &K {
         &*self.keys.add(i as usize)
     }
+
     #[inline]
     pub fn get_key(&self, i: u32) -> Option<&K> {
         if i < self.n_buckets && !self.is_either(i) {
@@ -174,7 +175,12 @@ impl<K> KHashRaw<K> {
     }
 
     #[inline]
-    pub(super) fn keys(&mut self) -> *mut K {
+    pub(super) fn keys(&self) -> *const K {
+        self.keys
+    }
+
+    #[inline]
+    pub(super) fn keys_mut(&mut self) -> *mut K {
         self.keys
     }
 
