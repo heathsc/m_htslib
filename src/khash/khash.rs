@@ -1,4 +1,6 @@
+use std::fmt::Formatter;
 use std::{
+    fmt::{self, Debug},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -554,7 +556,7 @@ impl<'a, K, V> Drop for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K: KHashFunc + PartialEq, V> KHashMap<'a, K, V> {
+impl<'a, K, V> KHashMap<'a, K, V> {
     pub fn init() -> Self {
         let inner = unsafe {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
@@ -562,6 +564,14 @@ impl<'a, K: KHashFunc + PartialEq, V> KHashMap<'a, K, V> {
         assert!(!inner.is_null(), "Out of memory error");
         Self {
             inner,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn iter(&self) -> KIterMap<'a, K, V> {
+        KIterMap {
+            map: self.inner as *const KHashMapRaw<K, V>,
+            idx: 0,
             phantom: PhantomData,
         }
     }
@@ -671,6 +681,48 @@ fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) 
     }
 }
 
+pub struct KIterMap<'a, K, V> {
+    map: *const KHashMapRaw<K, V>,
+    idx: KHInt,
+    phantom: PhantomData<&'a KHashMapRaw<K, V>>,
+}
+impl<'a, K, V> KIterMap<'a, K, V> {
+    unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
+        {
+            &*self.map
+        }
+    }
+}
+impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = unsafe { self.as_ref() };
+
+        let nb = map.n_buckets;
+        let mut x = None;
+
+        while self.idx < nb && x.is_none() {
+            let empty = map.is_either(self.idx);
+            if !empty {
+                unsafe {
+                    let k = map.get_key_unchecked(self.idx);
+                    let v = map.get_val_unchecked(self.idx);
+                    x = Some((k, v))
+                }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let map = unsafe { self.as_ref() };
+        (0, Some(map.n_buckets as usize))
+    }
+}
+
+/// Hash functions
 impl KHashFunc for u32 {
     fn hash(&self) -> u32 {
         *self
@@ -764,6 +816,8 @@ mod tests {
 
         assert_eq!(h.get(&10), Some(&c"String10"));
 
+        let (k, v) = h.iter().nth(5).unwrap();
+        assert_eq!((*k, *v), (20, c"String20"));
         Ok(())
     }
 
