@@ -23,7 +23,7 @@ pub struct Refs {
 }
 
 #[repr(C)]
-pub(crate) struct CramRange {
+pub struct CramRange {
     _unused: [u8; 0],
 }
 
