@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
-use std::{fmt::Debug, mem, ptr};
+use std::{fmt::Debug, iter::FusedIterator, mem, ptr};
 
 use super::khash_func::*;
-use crate::khash::KIterMapMut;
 use crate::KHashError;
 use libc::{c_void, size_t};
 
@@ -493,6 +492,7 @@ impl<'a, K> Iterator for KIter<'a, K> {
 }
 
 impl<'a, K> ExactSizeIterator for KIter<'a, K> {}
+impl<'a, K> FusedIterator for KIter<'a, K> {}
 
 pub struct KIntoKeys<K> {
     map: KHashRaw<K>,
@@ -525,6 +525,7 @@ impl<K> Iterator for KIntoKeys<K> {
 }
 
 impl<K> ExactSizeIterator for KIntoKeys<K> {}
+impl<K> FusedIterator for KIntoKeys<K> {}
 
 pub struct KDrain<'a, K> {
     map: *mut KHashRaw<K>,
@@ -568,6 +569,7 @@ impl<'a, K> Iterator for KDrain<'a, K> {
 }
 
 impl<'a, K> ExactSizeIterator for KDrain<'a, K> {}
+impl<'a, K> FusedIterator for KDrain<'a, K> {}
 
 impl<'a, K> Drop for KDrain<'a, K> {
     fn drop(&mut self) {

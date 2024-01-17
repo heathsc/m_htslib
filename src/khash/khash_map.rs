@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    iter::FusedIterator,
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -286,6 +287,7 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
 }
 
 impl<'a, K, V> ExactSizeIterator for KIterMap<'a, K, V> {}
+impl<'a, K, V> FusedIterator for KIterMap<'a, K, V> {}
 
 pub struct KIterMapMut<'a, K, V> {
     map: *mut KHashMapRaw<K, V>,
@@ -337,6 +339,7 @@ impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
 }
 
 impl<'a, K, V> ExactSizeIterator for KIterMapMut<'a, K, V> {}
+impl<'a, K, V> FusedIterator for KIterMapMut<'a, K, V> {}
 
 pub struct KIterVal<'a, K, V> {
     inner: KIterMap<'a, K, V>,
@@ -370,6 +373,7 @@ impl<'a, K, V> Iterator for KIterVal<'a, K, V> {
 }
 
 impl<'a, K, V> ExactSizeIterator for KIterVal<'a, K, V> {}
+impl<'a, K, V> FusedIterator for KIterVal<'a, K, V> {}
 
 pub struct KIntoIter<K, V> {
     map: KHashMapRaw<K, V>,
@@ -409,6 +413,7 @@ impl<K, V> Iterator for KIntoIter<K, V> {
 }
 
 impl<K, V> ExactSizeIterator for KIntoIter<K, V> {}
+impl<K, V> FusedIterator for KIntoIter<K, V> {}
 
 pub struct KIntoValues<K, V> {
     map: KHashMapRaw<K, V>,
@@ -447,6 +452,7 @@ impl<K, V> Iterator for KIntoValues<K, V> {
 }
 
 impl<K, V> ExactSizeIterator for KIntoValues<K, V> {}
+impl<K, V> FusedIterator for KIntoValues<K, V> {}
 
 pub struct KDrainMap<'a, K, V> {
     inner: KIterMapMut<'a, K, V>,
@@ -482,6 +488,7 @@ impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
 }
 
 impl<'a, K, V> ExactSizeIterator for KDrainMap<'a, K, V> {}
+impl<'a, K, V> FusedIterator for KDrainMap<'a, K, V> {}
 
 impl<'a, K, V> Drop for KDrainMap<'a, K, V> {
     fn drop(&mut self) {
@@ -603,6 +610,7 @@ mod tests {
         // Test drain iterator
         let (v, _) = h.drain().nth(3).unwrap();
         assert_eq!(v, 2);
+
         // Hash is empty after drain
         assert!(h.is_empty());
 
