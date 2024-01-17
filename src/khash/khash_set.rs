@@ -22,13 +22,13 @@ impl<K> Deref for KHashSetRaw<K> {
     type Target = KHashRaw<K>;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.hash }
+        &self.hash
     }
 }
 
 impl<K> DerefMut for KHashSetRaw<K> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut self.hash }
+        &mut self.hash
     }
 }
 
@@ -133,26 +133,17 @@ impl<'a, K> KHashSet<'a, K> {
     }
     #[inline]
     pub fn into_keys(mut self) -> KIntoKeys<K> {
-        let mut map = unsafe { ptr::read(&self.hash) };
+        let map = unsafe { ptr::read(&self.hash) };
         self.inner = ptr::null_mut();
         map.into_keys()
     }
     #[inline]
-    pub fn into_iter(mut self) -> KIntoKeys<K> {
+    pub fn into_iter(self) -> KIntoKeys<K> {
         self.into_keys()
     }
 }
 
 impl<'a, K> IntoIterator for &KHashSet<'a, K> {
-    type Item = &'a K;
-    type IntoIter = KIter<'a, K>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        KIter::make(&self.hash as *const KHashRaw<K>)
-    }
-}
-
-impl<'a, K> IntoIterator for &mut KHashSet<'a, K> {
     type Item = &'a K;
     type IntoIter = KIter<'a, K>;
 
@@ -205,10 +196,6 @@ mod tests {
         assert_eq!(h.insert("key1")?, true);
 
         for k in &h {
-            eprintln!("{}", k);
-        }
-
-        for k in &mut h {
             eprintln!("{}", k);
         }
 

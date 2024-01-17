@@ -386,7 +386,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                             unsafe { ptr::swap(self.keys.add(i as usize), &mut key) };
 
                             // Same for values if this is a HashMap
-                            if let Some((mut p, mut p1)) = val.take() {
+                            if let Some((mut p, p1)) = val.take() {
                                 unsafe { ptr::swap(p1.add(i as usize), &mut p) };
                                 val = Some((p, p1))
                             }
@@ -461,7 +461,9 @@ impl<'a, K> KIter<'a, K> {
     }
     pub(super) fn make(map: *const KHashRaw<K>) -> Self {
         Self {
-            map, idx: 0, phantom: PhantomData
+            map,
+            idx: 0,
+            phantom: PhantomData,
         }
     }
 }
@@ -490,6 +492,8 @@ impl<'a, K> Iterator for KIter<'a, K> {
     }
 }
 
+impl<'a, K> ExactSizeIterator for KIter<'a, K> {}
+
 pub struct KIntoKeys<K> {
     map: KHashRaw<K>,
     idx: KHInt,
@@ -516,9 +520,11 @@ impl<K> Iterator for KIntoKeys<K> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        unsafe { self.map.size_hint() }
+        self.map.size_hint()
     }
 }
+
+impl<K> ExactSizeIterator for KIntoKeys<K> {}
 
 pub struct KDrain<'a, K> {
     map: *mut KHashRaw<K>,
@@ -545,12 +551,10 @@ impl<'a, K> Iterator for KDrain<'a, K> {
         while self.idx < nb {
             let empty = map.is_bin_either(self.idx);
             if !empty {
-                unsafe {
-                    x = Some(unsafe { ptr::read(keys.add(self.idx as usize)) });
-                    map.set_is_bin_del_true(self.idx);
-                    self.idx += 1;
-                    break;
-                }
+                x = Some(unsafe { ptr::read(keys.add(self.idx as usize)) });
+                map.set_is_bin_del_true(self.idx);
+                self.idx += 1;
+                break;
             }
             self.idx += 1;
         }
@@ -562,6 +566,8 @@ impl<'a, K> Iterator for KDrain<'a, K> {
         unsafe { self.as_ref().size_hint() }
     }
 }
+
+impl<'a, K> ExactSizeIterator for KDrain<'a, K> {}
 
 impl<'a, K> Drop for KDrain<'a, K> {
     fn drop(&mut self) {

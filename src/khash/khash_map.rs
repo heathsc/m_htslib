@@ -22,13 +22,13 @@ impl<K, V> Deref for KHashMapRaw<K, V> {
     type Target = KHashRaw<K>;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.hash }
+        &self.hash
     }
 }
 
 impl<K, V> DerefMut for KHashMapRaw<K, V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut self.hash }
+        &mut self.hash
     }
 }
 
@@ -188,7 +188,7 @@ impl<'a, K, V> KHashMap<'a, K, V> {
     }
     #[inline]
     pub fn into_keys(mut self) -> KIntoKeys<K> {
-        let mut khash = unsafe { ptr::read(&self.hash) };
+        let khash = unsafe { ptr::read(&self.hash) };
         self.free_vals();
         self.inner = ptr::null_mut();
         khash.into_keys()
@@ -196,13 +196,13 @@ impl<'a, K, V> KHashMap<'a, K, V> {
 
     #[inline]
     pub fn into_values(mut self) -> KIntoValues<K, V> {
-        let mut map = unsafe { ptr::read(self.inner) };
+        let map = unsafe { ptr::read(self.inner) };
         self.inner = ptr::null_mut();
         KIntoValues { map, idx: 0 }
     }
     #[inline]
     pub fn into_iter(mut self) -> KIntoIter<K, V> {
-        let mut map = unsafe { ptr::read(self.inner) };
+        let map = unsafe { ptr::read(self.inner) };
         self.inner = ptr::null_mut();
         KIntoIter { map, idx: 0 }
     }
@@ -285,6 +285,8 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
     }
 }
 
+impl<'a, K, V> ExactSizeIterator for KIterMap<'a, K, V> {}
+
 pub struct KIterMapMut<'a, K, V> {
     map: *mut KHashMapRaw<K, V>,
     idx: KHInt,
@@ -334,6 +336,8 @@ impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
     }
 }
 
+impl<'a, K, V> ExactSizeIterator for KIterMapMut<'a, K, V> {}
+
 pub struct KIterVal<'a, K, V> {
     inner: KIterMap<'a, K, V>,
 }
@@ -365,6 +369,8 @@ impl<'a, K, V> Iterator for KIterVal<'a, K, V> {
     }
 }
 
+impl<'a, K, V> ExactSizeIterator for KIterVal<'a, K, V> {}
+
 pub struct KIntoIter<K, V> {
     map: KHashMapRaw<K, V>,
     idx: KHInt,
@@ -382,16 +388,14 @@ impl<K, V> Iterator for KIntoIter<K, V> {
         while self.idx < nb {
             let empty = map.is_bin_either(self.idx);
             if !empty {
-                unsafe {
-                    // Drop key
-                    let k = unsafe { ptr::read(keys.add(self.idx as usize)) };
-                    // Take value
-                    let v = unsafe { ptr::read(map.vals.add(self.idx as usize)) };
-                    x = Some((k, v));
-                    map.set_is_bin_del_true(self.idx);
-                    self.idx += 1;
-                    break;
-                }
+                // Drop key
+                let k = unsafe { ptr::read(keys.add(self.idx as usize)) };
+                // Take value
+                let v = unsafe { ptr::read(map.vals.add(self.idx as usize)) };
+                x = Some((k, v));
+                map.set_is_bin_del_true(self.idx);
+                self.idx += 1;
+                break;
             }
             self.idx += 1;
         }
@@ -400,9 +404,11 @@ impl<K, V> Iterator for KIntoIter<K, V> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        unsafe { self.map.size_hint() }
+        self.map.size_hint()
     }
 }
+
+impl<K, V> ExactSizeIterator for KIntoIter<K, V> {}
 
 pub struct KIntoValues<K, V> {
     map: KHashMapRaw<K, V>,
@@ -421,15 +427,13 @@ impl<K, V> Iterator for KIntoValues<K, V> {
         while self.idx < nb {
             let empty = map.is_bin_either(self.idx);
             if !empty {
-                unsafe {
-                    // Drop key
-                    let _ = unsafe { ptr::read(keys.add(self.idx as usize)) };
-                    // Take value
-                    x = Some(unsafe { ptr::read(map.vals.add(self.idx as usize)) });
-                    map.set_is_bin_del_true(self.idx);
-                    self.idx += 1;
-                    break;
-                }
+                // Drop key
+                let _ = unsafe { ptr::read(keys.add(self.idx as usize)) };
+                // Take value
+                x = Some(unsafe { ptr::read(map.vals.add(self.idx as usize)) });
+                map.set_is_bin_del_true(self.idx);
+                self.idx += 1;
+                break;
             }
             self.idx += 1;
         }
@@ -438,9 +442,11 @@ impl<K, V> Iterator for KIntoValues<K, V> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        unsafe { self.map.size_hint() }
+        self.map.size_hint()
     }
 }
+
+impl<K, V> ExactSizeIterator for KIntoValues<K, V> {}
 
 pub struct KDrainMap<'a, K, V> {
     inner: KIterMapMut<'a, K, V>,
@@ -457,14 +463,12 @@ impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
         while self.inner.idx < nb {
             let empty = map.is_bin_either(self.inner.idx);
             if !empty {
-                unsafe {
-                    let k = unsafe { ptr::read(keys.add(self.inner.idx as usize)) };
-                    let v = unsafe { ptr::read(map.vals.add(self.inner.idx as usize)) };
-                    map.set_is_bin_del_true(self.inner.idx);
-                    x = Some((k, v));
-                    self.inner.idx += 1;
-                    break;
-                }
+                let k = unsafe { ptr::read(keys.add(self.inner.idx as usize)) };
+                let v = unsafe { ptr::read(map.vals.add(self.inner.idx as usize)) };
+                map.set_is_bin_del_true(self.inner.idx);
+                x = Some((k, v));
+                self.inner.idx += 1;
+                break;
             }
             self.inner.idx += 1;
         }
@@ -473,9 +477,11 @@ impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        unsafe { self.inner.size_hint() }
+        self.inner.size_hint()
     }
 }
+
+impl<'a, K, V> ExactSizeIterator for KDrainMap<'a, K, V> {}
 
 impl<'a, K, V> Drop for KDrainMap<'a, K, V> {
     fn drop(&mut self) {
@@ -579,7 +585,7 @@ mod tests {
         assert_eq!((*k, *v), (20, c"String20"));
 
         // Test mutable iterator
-        let (k, v) = h.iter_mut().nth(5).unwrap();
+        let (_, v) = h.iter_mut().nth(5).unwrap();
         *v = c"String20_changed";
         assert_eq!(h.get(&20), Some(&c"String20_changed"));
 
@@ -595,7 +601,7 @@ mod tests {
         assert_eq!(h.get(&20), None);
 
         // Test drain iterator
-        let (v, k) = h.drain().nth(3).unwrap();
+        let (v, _) = h.drain().nth(3).unwrap();
         assert_eq!(v, 2);
         // Hash is empty after drain
         assert!(h.is_empty());
@@ -666,7 +672,7 @@ mod tests {
     #[test]
     fn hash_kstring() -> Result<(), KHashError> {
         let mut h = KHashMap::init();
-        let mut ks = KString::from_str("key1").unwrap();
+        let ks = KString::from_str("key1").unwrap();
         assert_eq!(h.insert(ks, 42)?, None);
         Ok(())
     }

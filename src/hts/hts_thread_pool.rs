@@ -78,14 +78,14 @@ impl<'a> Deref for HtsThreadPool<'a> {
     type Target = HtsTPoolRaw;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner }
+        &self.inner
     }
 }
 
 impl<'a> DerefMut for HtsThreadPool<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        &mut self.inner
     }
 }
 

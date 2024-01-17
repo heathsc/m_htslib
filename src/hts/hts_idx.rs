@@ -49,7 +49,6 @@ pub struct HtsIdxRaw {
 
 #[link(name = "hts")]
 extern "C" {
-    #[inline]
     fn hts_idx_init(
         n: c_int,
         fmt: c_int,
@@ -455,7 +454,7 @@ mod tests {
 
     #[test]
     fn read() {
-        let mut idx = HtsIdx::load(c"test/index.bam", IdxFmt::Bai).unwrap();
+        let idx = HtsIdx::load(c"test/index.bam", IdxFmt::Bai).unwrap();
         assert_eq!(idx.nseq(), 7);
         assert_eq!(idx.get_n_no_coor().unwrap(), 50);
         let (map, unmap) = idx.get_stat(1).unwrap();
@@ -464,7 +463,7 @@ mod tests {
 
     #[test]
     fn read2() {
-        let mut idx = HtsIdx::load2(c"test/index.sam.gz", c"test/index.sam.gz.csi").unwrap();
+        let idx = HtsIdx::load2(c"test/index.sam.gz", c"test/index.sam.gz.csi").unwrap();
         assert_eq!(idx.nseq(), 7);
         assert_eq!(idx.get_n_no_coor().unwrap(), 50);
         let (map, unmap) = idx.get_stat(1).unwrap();
@@ -473,7 +472,7 @@ mod tests {
 
     #[test]
     fn vcf_read() {
-        let mut idx = HtsIdx::load(c"test/index.vcf.gz", IdxFmt::Tbi).unwrap();
+        let idx = HtsIdx::load(c"test/index.vcf.gz", IdxFmt::Tbi).unwrap();
         assert_eq!(idx.nseq(), 3);
         assert_eq!(idx.get_n_no_coor().unwrap(), 0);
         let (map, unmap) = idx.get_stat(1).unwrap();
