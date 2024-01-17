@@ -45,6 +45,10 @@ impl<K> KHashSetRaw<K> {
         self._clear();
         self.hash.free();
     }
+    #[inline]
+    pub fn iter(&self) -> KIter<K> {
+        self.hash.keys()
+    }
 }
 
 impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
@@ -60,7 +64,7 @@ impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
         Ok(if (fg & 3) != 0 {
             // Either not present or deleted
             unsafe {
-                ptr::write(self.keys_mut().add(idx as usize), key);
+                ptr::write(self.keys_ptr_mut().add(idx as usize), key);
             }
             self.inc_size();
             if (fg & 2) != 0 {
@@ -106,14 +110,18 @@ impl<'a, K> DerefMut for KHashSet<'a, K> {
 
 impl<'a, K> Drop for KHashSet<'a, K> {
     fn drop(&mut self) {
-        self.free();
-        unsafe {
-            libc::free(self.inner as *mut c_void);
+        eprintln!("Dropping KHashSet");
+        if !self.inner.is_null() {
+            // Drop inner
+            let _ = unsafe { ptr::read(self.inner) };
+            unsafe {
+                libc::free(self.inner as *mut c_void);
+            }
         }
     }
 }
 
-impl<'a, K: KHashFunc + PartialEq> KHashSet<'a, K> {
+impl<'a, K> KHashSet<'a, K> {
     pub fn init() -> Self {
         let inner =
             unsafe { libc::calloc(1, mem::size_of::<KHashSetRaw<K>>()) as *mut KHashSetRaw<K> };
@@ -122,6 +130,12 @@ impl<'a, K: KHashFunc + PartialEq> KHashSet<'a, K> {
             inner,
             phantom: PhantomData,
         }
+    }
+    #[inline]
+    pub fn into_keys(mut self) -> KIntoKeys<K> {
+        let mut map = unsafe { ptr::read(&self.hash) };
+        self.inner = ptr::null_mut();
+        map.into_keys()
     }
 }
 
@@ -141,6 +155,9 @@ mod tests {
         eprintln!("Removing key 1");
         assert_eq!(h.delete(&1), true);
         assert_eq!(h.insert(1)?, false);
+
+        // Test keys iterator
+        assert_eq!(h.iter().nth(1), Some(&1));
         Ok(())
     }
 

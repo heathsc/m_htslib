@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::{fmt::Debug, mem, ptr};
 
 use super::khash_func::*;
@@ -78,6 +79,19 @@ pub struct KHashRaw<K> {
     upper_bound: KHInt,
     flags: *mut u32,
     keys: *mut K,
+}
+
+impl<K> Drop for KHashRaw<K> {
+    fn drop(&mut self) {
+        for i in 0..self.n_buckets() {
+            if !self.is_bin_either(i) {
+                unsafe {
+                    self._drop_key(i);
+                }
+            }
+        }
+        self.free();
+    }
 }
 
 impl<K> KHashRaw<K> {
@@ -183,16 +197,6 @@ impl<K> KHashRaw<K> {
     }
 
     #[inline]
-    pub(super) fn keys(&self) -> *const K {
-        self.keys
-    }
-
-    #[inline]
-    pub(super) fn keys_mut(&mut self) -> *mut K {
-        self.keys
-    }
-
-    #[inline]
     pub(super) fn inc_size(&mut self) {
         self.size += 1
     }
@@ -200,6 +204,27 @@ impl<K> KHashRaw<K> {
     #[inline]
     pub(super) fn inc_n_occupied(&mut self) {
         self.n_occupied += 1
+    }
+
+    #[inline]
+    pub fn keys(&self) -> KIter<K> {
+        KIter {
+            map: self as *const Self,
+            idx: 0,
+            phantom: PhantomData,
+        }
+    }
+    #[inline]
+    pub fn into_keys(self) -> KIntoKeys<K> {
+        KIntoKeys {
+            map: self,
+            idx: 0,
+            phantom: PhantomData,
+        }
+    }
+    #[inline]
+    pub(super) fn keys_ptr_mut(&mut self) -> *mut K {
+        self.keys
     }
 }
 
@@ -392,5 +417,91 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             self.upper_bound = ((self.n_buckets as f64) * HASH_UPPER).round() as KHInt;
         }
         Ok(())
+    }
+}
+
+pub(super) trait KIterFunc {
+    type Key;
+    fn keys_ptr(&self) -> *const Self::Key;
+    fn size_hint(&self) -> (usize, Option<usize>);
+}
+
+impl<K> KIterFunc for KHashRaw<K> {
+    type Key = K;
+    #[inline]
+    fn keys_ptr(&self) -> *const K {
+        self.keys
+    }
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let s = self.n_occupied as usize;
+        (s, Some(s))
+    }
+}
+
+pub struct KIter<'a, K> {
+    map: *const KHashRaw<K>,
+    idx: KHInt,
+    phantom: PhantomData<&'a KHashRaw<K>>,
+}
+
+impl<'a, K> KIter<'a, K> {
+    unsafe fn as_ref(&self) -> &'a KHashRaw<K> {
+        &*self.map
+    }
+}
+impl<'a, K> Iterator for KIter<'a, K> {
+    type Item = &'a K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = unsafe { self.as_ref() };
+
+        let nb = map.n_buckets();
+        let keys = map.keys_ptr();
+        let mut x = None;
+
+        while self.idx < nb && x.is_none() {
+            let empty = map.is_bin_either(self.idx);
+            if !empty {
+                unsafe { x = Some(&*keys.add(self.idx as usize)) }
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.as_ref().size_hint() }
+    }
+}
+
+pub struct KIntoKeys<K> {
+    map: KHashRaw<K>,
+    idx: KHInt,
+    phantom: PhantomData<KHashRaw<K>>,
+}
+
+impl<K> Iterator for KIntoKeys<K> {
+    type Item = K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = &mut self.map;
+        let nb = map.n_buckets();
+        let keys = map.keys_ptr();
+        let mut x = None;
+
+        while self.idx < nb && x.is_none() {
+            let empty = map.is_bin_either(self.idx);
+            if !empty {
+                x = Some(unsafe { ptr::read(keys.add(self.idx as usize)) });
+                map.set_is_bin_del_true(self.idx);
+            }
+            self.idx += 1;
+        }
+        x
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        unsafe { self.map.size_hint() }
     }
 }
