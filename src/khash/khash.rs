@@ -316,7 +316,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
         };
         Ok(x)
     }
-    fn resize<V>(
+    pub(super) fn resize<V>(
         &mut self,
         new_n_buckets: KHInt,
         mut val_ptr: Option<&mut *mut V>,
@@ -426,6 +426,33 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             self.upper_bound = ((self.n_buckets as f64) * HASH_UPPER).round() as KHInt;
         }
         Ok(())
+    }
+    pub(super) fn expand(&mut self, new_n_buckets: KHInt) {
+        let new_n_buckets = kroundup32(new_n_buckets);
+        let nb = self.n_buckets;
+        if nb < new_n_buckets {
+            let sz = fsize(new_n_buckets) * mem::size_of::<u32>();
+            let new_flags = unsafe { libc::malloc(sz as size_t) } as *mut u32;
+            if new_flags.is_null() {
+                panic!("Out of memory error")
+            }
+            unsafe {
+                libc::memset(new_flags as *mut c_void, 0xaa, sz);
+            }
+            self.keys = unsafe {
+                libc::realloc(
+                    self.keys as *mut c_void,
+                    (new_n_buckets as size_t) * mem::size_of::<K>(),
+                )
+            } as *mut K;
+            if self.keys.is_null() {
+                panic!("Out of memory error")
+            }
+            unsafe { libc::free(self.flags as *mut c_void) }
+            self.flags = new_flags;
+            self.n_buckets = new_n_buckets;
+            self.upper_bound = ((self.n_buckets as f64) * HASH_UPPER).round() as KHInt;
+        }
     }
 }
 

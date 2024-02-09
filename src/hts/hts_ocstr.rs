@@ -7,7 +7,7 @@ use std::{
 /// Owned CStr
 /// The difference with CString is that the memory was allocated with libc::free(), and so needs
 /// to be deallocated using libc::free().  An OCStr can only be made using `OCStr::from_ptr`, using
-/// a valid pointer to C string allocated from C code.
+/// a valid pointer to C string allocated from C code.  Note that this a read only view of the C string.
 ///
 /// We implement Deref so that it will inherit the methods from CStr
 pub struct OCStr<'a> {
@@ -31,12 +31,16 @@ impl<'a> OCStr<'a> {
     /// reference to this block of memory
     #[inline]
     pub unsafe fn from_ptr(p: *const c_char) -> Self {
+        assert!(!p.is_null());
         Self {
             inner: p,
             phantom: PhantomData,
         }
     }
-
+    #[inline]
+    pub fn as_ptr(&self) -> *const c_char {
+        self.inner
+    }
     #[inline]
     pub fn to_cstr(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.inner) }

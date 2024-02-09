@@ -1,4 +1,4 @@
-use crate::kstring::KString;
+use crate::{hts::hts_ocstr::OCStr, kstring::KString};
 
 pub trait KHashFunc {
     fn hash(&self) -> u32;
@@ -69,5 +69,25 @@ impl KHashFunc for String {
     #[inline]
     fn hash(&self) -> u32 {
         hash_u8_slice(self.as_bytes())
+    }
+}
+
+impl<'a> KHashFunc for OCStr<'a> {
+    fn hash(&self) -> u32 {
+        let mut p = self.as_ptr();
+        unsafe {
+            let mut h = *p as u32;
+            if h != 0 {
+                loop {
+                    p = p.add(1);
+                    let x = *p;
+                    if x == 0 {
+                        break;
+                    }
+                    h = (h >> 5).overflowing_sub(h).0 + x as u32;
+                }
+            }
+            h
+        }
     }
 }

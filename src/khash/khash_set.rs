@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use libc::c_void;
+use libc::{c_void, size_t};
 
 use super::*;
 use crate::KHashError;
@@ -110,7 +110,6 @@ impl<'a, K> DerefMut for KHashSet<'a, K> {
 
 impl<'a, K> Drop for KHashSet<'a, K> {
     fn drop(&mut self) {
-        eprintln!("Dropping KHashSet");
         if !self.inner.is_null() {
             // Drop inner
             let _ = unsafe { ptr::read(self.inner) };
@@ -121,11 +120,49 @@ impl<'a, K> Drop for KHashSet<'a, K> {
     }
 }
 
-impl<'a, K> KHashSet<'a, K> {
-    pub fn init() -> Self {
+impl<'a, K> Default for KHashSet<'a, K> {
+    fn default() -> Self {
         let inner =
             unsafe { libc::calloc(1, mem::size_of::<KHashSetRaw<K>>()) as *mut KHashSetRaw<K> };
         assert!(!inner.is_null(), "Out of memory error");
+        Self {
+            inner,
+            phantom: PhantomData,
+        }
+    }
+}
+impl<'a, K> KHashSet<'a, K> {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Consumes and leaks the [KHashSet], returning a mutable reference to [KHashRaw].
+    /// After calling this function, the [KHashRaw] structure (containing the keys, values etc.)
+    /// will not be automatically deallocated when the reference is dropped.  If the keys and values
+    /// are allocated on the heap and do not require special deallocation then the htslib function
+    /// kh_destroy() can be used (and this is the only way by which a [KHashSet] instance created in
+    /// Rust can be safely passed to kh_destroy()).  Otherwise, [KHashSet::from_raw_ptr] can be used recreate
+    /// a valid [KHashSet] instance which will handle correctly the deallocation.
+    pub fn leak(self) -> &'a mut KHashSetRaw<K> {
+        let mut me = mem::ManuallyDrop::new(self);
+        unsafe { &mut *me.inner }
+    }
+
+    /// Make new [KHashSet] instance from raw pointer to [KHashSetRaw]. Note that the
+    /// generic type `K` for the Key type must be correctly specified.
+    ///
+    /// # Safety:
+    ///
+    /// `inner` must be a valid, correctly aligned, pointer to a unique, initialized KHashMapRaw struct
+    /// (either initialized from Rust or from C) with the correct type `K` for the Keys.  
+    /// In particular, the pointer must be the only existing pointer to the KHashSetRaw structure,
+    /// otherwise the internal structures will be freed twice.
+    pub unsafe fn from_raw_ptr(inner: *mut KHashSetRaw<K>) -> Self {
+        assert!(
+            !inner.is_null(),
+            "KHashMap::from_raw_ptr called with null pointer"
+        );
         Self {
             inner,
             phantom: PhantomData,
@@ -137,9 +174,12 @@ impl<'a, K> KHashSet<'a, K> {
         self.inner = ptr::null_mut();
         map.into_keys()
     }
-    #[inline]
-    pub fn into_iter(self) -> KIntoKeys<K> {
-        self.into_keys()
+}
+impl<'a, K: KHashFunc + PartialEq> KHashSet<'a, K> {
+    pub fn with_capacity(sz: KHInt) -> Self {
+        let mut h = Self::default();
+        h.expand(sz);
+        h
     }
 }
 
@@ -167,7 +207,7 @@ mod tests {
 
     #[test]
     fn set_int() -> Result<(), KHashError> {
-        let mut h = KHashSet::init();
+        let mut h = KHashSet::new();
         assert_eq!(h.insert(42u32)?, false);
         assert_eq!(h.insert(64)?, false);
         assert_eq!(h.insert(1)?, false);
@@ -190,7 +230,7 @@ mod tests {
 
     #[test]
     fn set_str() -> Result<(), KHashError> {
-        let mut h = KHashSet::init();
+        let mut h = KHashSet::new();
         assert_eq!(h.insert("key1")?, false);
         assert_eq!(h.insert("key2")?, false);
         assert_eq!(h.insert("key1")?, true);
@@ -199,9 +239,13 @@ mod tests {
             eprintln!("{}", k);
         }
 
-        for k in h {
+        let rf = h.leak();
+        let mut h1 = unsafe { KHashSet::from_raw_ptr(rf) };
+
+        for k in h1 {
             eprintln!("{}", k);
         }
+
         Ok(())
     }
 }

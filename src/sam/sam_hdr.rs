@@ -8,6 +8,7 @@ use std::{
 };
 
 use super::sam_error::SamError;
+use crate::hts::HtsExactFormat::Sam;
 use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString, HtsError};
 
 #[repr(C)]
@@ -43,6 +44,10 @@ impl<'a> SamHdrTagValue<'a> {
 
     pub fn value(&self) -> &str {
         self.value
+    }
+
+    pub fn value_as_cstring(&self) -> Result<CString, SamError> {
+        CString::new(self.value).map_err(|e| SamError::NullInTagValue)
     }
 }
 
@@ -197,6 +202,14 @@ extern "C" {
         pos: c_int,
         ks: *mut KString,
     ) -> c_int;
+    fn sam_hdr_remove_line_id(
+        hd: *mut SamHdrRaw,
+        typ: *const c_char,
+        key: *const c_char,
+        val: *const c_char,
+    ) -> c_int;
+    fn sam_hdr_remove_line_pos(hd: *mut SamHdrRaw, typ: *const c_char, pos: c_int) -> c_int;
+
     fn sam_hdr_find_tag_id(
         hd: *mut SamHdrRaw,
         type_: *const c_char,
@@ -213,6 +226,7 @@ extern "C" {
         ks: *mut KString,
     ) -> c_int;
     fn sam_hdr_count_lines(hd: *mut SamHdrRaw, type_: *const c_char) -> c_int;
+    fn sam_hdr_pg_id(hd: *mut SamHdrRaw, name: *const char) -> *const c_char;
     fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
 }
 
@@ -301,6 +315,39 @@ impl SamHdrRaw {
         self.add_lines(&cs)
     }
 
+    pub fn add_pg(&mut self, name: &CStr, tag_values: &[SamHdrTagValue]) -> Result<(), SamError> {
+        // Check for ID, PP and PN tags in specified line
+        let mut id_tag = None;
+        let mut pp_tag = None;
+        let mut pn_tag = None;
+        for tv in tag_values {
+            match tv.tag {
+                ['I', 'D'] => {
+                    if self
+                        .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
+                        .is_some()
+                    {
+                        return Err(SamError::PgIdTagExists);
+                    }
+                    id_tag = Some(tv.value())
+                }
+                ['P', 'P'] => {
+                    if self
+                        .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
+                        .is_none()
+                    {
+                        return Err(SamError::PpRefTagMissing);
+                    }
+                    pp_tag = Some(tv.value())
+                }
+                ['P', 'N'] => pn_tag = Some(tv.value()),
+                _ => (),
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn remove_except(
         &mut self,
         ln_type: &SamHdrType,
@@ -357,6 +404,27 @@ impl SamHdrRaw {
             Some(ks)
         } else {
             None
+        }
+    }
+    pub fn remove_line_id(
+        &mut self,
+        typ: &CStr,
+        id_key: &CStr,
+        id_val: &CStr,
+    ) -> Result<(), SamError> {
+        if unsafe {
+            sam_hdr_remove_line_id(self, typ.as_ptr(), id_key.as_ptr(), id_val.as_ptr()) == 0
+        } {
+            Ok(())
+        } else {
+            Err(SamError::OperationFailed)
+        }
+    }
+    pub fn remove_line_pos(&mut self, typ: &CStr, pos: usize) -> Result<(), SamError> {
+        if unsafe { sam_hdr_remove_line_pos(self, typ.as_ptr(), pos as c_int) == 0 } {
+            Ok(())
+        } else {
+            Err(SamError::OperationFailed)
         }
     }
     pub fn find_tag_id(

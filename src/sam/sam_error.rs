@@ -18,4 +18,10 @@ pub enum SamError {
     IllegalHeaderChars,
     #[error("Illegal Header Tag (Tag must be two characters)")]
     IllegalTagLength,
+    #[error("Illegal Tag Value (interior null character)")]
+    NullInTagValue,
+    #[error("PG ID Tag already exists in SAM header")]
+    PgIdTagExists,
+    #[error("PG ID Tag referred to in PP tag does not exist in SAM header")]
+    PpRefTagMissing,
 }

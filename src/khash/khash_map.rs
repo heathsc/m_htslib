@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use libc::c_void;
+use libc::{c_void, size_t};
 
 use super::*;
 use crate::{kstring::KString, KHashError};
@@ -176,8 +176,8 @@ impl<'a, K, V> Drop for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> KHashMap<'a, K, V> {
-    pub fn init() -> Self {
+impl<'a, K, V> Default for KHashMap<'a, K, V> {
+    fn default() -> Self {
         let inner = unsafe {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
         };
@@ -187,6 +187,57 @@ impl<'a, K, V> KHashMap<'a, K, V> {
             phantom: PhantomData,
         }
     }
+}
+
+impl<'a, K: KHashFunc + PartialEq, V> KHashMap<'a, K, V> {
+    pub fn with_capacity(sz: KHInt) -> Self {
+        let mut h = Self::default();
+        h.expand(sz);
+        let nb = h.n_buckets();
+        h.vals = unsafe { libc::malloc((nb as size_t) * mem::size_of::<K>()) } as *mut V;
+        h
+    }
+}
+
+impl<'a, K, V> KHashMap<'a, K, V> {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Consumes and leaks the [KHashMap], returning a mutable reference to [KHashMapRaw].
+    /// After calling this function, the [KHashMapRaw] structure (containing the keys, values etc.)
+    /// will not be automatically deallocated when the reference is dropped.  If the keys and values
+    /// are allocated on the heap and do not require special deallocation then the htslib function
+    /// kh_destroy() can be used (and this is the only way by which a [KHashMap] instance created in
+    /// Rust can be safely passed to kh_destroy()).  Otherwise, [KHashMap::from_raw_ptr] can be used recreate
+    /// a valid [KHashMap] instance which will handle correctly the deallocation.
+    pub fn leak(self) -> &'a mut KHashMapRaw<K, V> {
+        let mut me = mem::ManuallyDrop::new(self);
+        unsafe { &mut *me.inner }
+    }
+
+    /// Make new [KHashMap] instance from raw pointer to [KHashMapRaw]. Note that the
+    /// generic type `K` and `V` for the Key and Value type respectively must be correctly
+    /// specified.
+    ///
+    /// # Safety:
+    ///
+    /// `inner` must be a valid, correctly aligned, pointer to a unique, initialized KHashMapRaw struct
+    /// (either initialized from Rust or from C) with the correct types `K` and `V` for the Keys and Values.  
+    /// In particular, the pointer must be the only existing pointer to the KHashMapRaw structure,
+    /// otherwise the internal structures will be freed twice.
+    pub unsafe fn from_raw_ptr(inner: *mut KHashMapRaw<K, V>) -> Self {
+        assert!(
+            !inner.is_null(),
+            "KHashMap::from_raw_ptr called with null pointer"
+        );
+        Self {
+            inner,
+            phantom: PhantomData,
+        }
+    }
+
     #[inline]
     pub fn into_keys(mut self) -> KIntoKeys<K> {
         let khash = unsafe { ptr::read(&self.hash) };
@@ -202,7 +253,7 @@ impl<'a, K, V> KHashMap<'a, K, V> {
         KIntoValues { map, idx: 0 }
     }
     #[inline]
-    pub fn into_iter(mut self) -> KIntoIter<K, V> {
+    fn _into_iter(mut self) -> KIntoIter<K, V> {
         let map = unsafe { ptr::read(self.inner) };
         self.inner = ptr::null_mut();
         KIntoIter { map, idx: 0 }
@@ -240,7 +291,7 @@ impl<'a, K, V> IntoIterator for KHashMap<'a, K, V> {
     type IntoIter = KIntoIter<K, V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.into_iter()
+        self._into_iter()
     }
 }
 
@@ -539,6 +590,21 @@ impl<'a, K, V> MapEntryMut<'a, K, V> {
         assert!(i < self.map.n_buckets());
         _insert_val(self.map, i, self.key, val)
     }
+
+    #[inline]
+    pub fn is_occupied(&self) -> bool {
+        !self.map.is_bin_empty(self.idx)
+    }
+
+    #[inline]
+    pub fn delete(self) -> Option<V> {
+        if self.is_occupied() {
+            self.map._del(self.idx);
+            Some(unsafe { self.map._drop_val(self.idx) })
+        } else {
+            None
+        }
+    }
 }
 
 fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) -> Option<V> {
@@ -568,7 +634,7 @@ mod tests {
 
     #[test]
     fn hash_int_cstr() -> Result<(), KHashError> {
-        let mut h: KHashMap<KHInt, &CStr> = KHashMap::init();
+        let mut h: KHashMap<KHInt, &CStr> = KHashMap::new();
         assert_eq!(h.insert(10, c"String10")?, None);
         assert_eq!(h.insert(2, c"String2")?, None);
         assert_eq!(h.insert(290, c"String290")?, None);
@@ -641,7 +707,7 @@ mod tests {
 
     #[test]
     fn hash_int_string() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(42u32, Test::new("string1"))?, None);
         assert_eq!(h.insert(64, Test::new("string2"))?, None);
         assert_eq!(h.insert(1, Test::new("string3"))?, None);
@@ -664,7 +730,7 @@ mod tests {
 
     #[test]
     fn hash_tstring() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(Test::new("key1"), 42)?, None);
         assert_eq!(h.insert(Test::new("key2"), 76)?, None);
         assert_eq!(h.insert(Test::new("key1"), 21)?, Some(42));
@@ -679,7 +745,7 @@ mod tests {
 
     #[test]
     fn hash_kstring() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         let ks = KString::from_str("key1").unwrap();
         assert_eq!(h.insert(ks, 42)?, None);
         Ok(())
@@ -687,19 +753,29 @@ mod tests {
 
     #[test]
     fn hash_str() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert("key1", 42)?, None);
         assert_eq!(h.insert("key2", 76)?, None);
         assert_eq!(h.insert("key1", 21)?, Some(42));
 
         // Test keys iterator
         assert_eq!(h.keys().next(), Some(&"key1"));
+
+        // Test leak
+        let raw_ref = h.leak();
+
+        // And make new KHashMap Instance
+        let new_h = unsafe { KHashMap::from_raw_ptr(raw_ref) };
+
+        // Test keys iterator after move
+        assert_eq!(new_h.keys().nth(1), Some(&"key2"));
+
         Ok(())
     }
 
     #[test]
     fn hash_tstring2() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(Test::new("key1"), Test::new("val1"))?, None);
         assert_eq!(h.insert(Test::new("key2"), Test::new("val2"))?, None);
         assert_eq!(h.insert(Test::new("key3"), Test::new("val3"))?, None);
@@ -712,7 +788,7 @@ mod tests {
 
     #[test]
     fn hash_tstring3() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
         assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
         assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
@@ -725,7 +801,7 @@ mod tests {
 
     #[test]
     fn hash_tstring4() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
         assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
         assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
@@ -741,7 +817,7 @@ mod tests {
 
     #[test]
     fn hash_tstring5() -> Result<(), KHashError> {
-        let mut h = KHashMap::init();
+        let mut h = KHashMap::new();
         assert_eq!(h.insert(Test::new("keyE"), Test::new("val1"))?, None);
         assert_eq!(h.insert(Test::new("keyD"), Test::new("val2"))?, None);
         assert_eq!(h.insert(Test::new("keyC"), Test::new("val3"))?, None);
@@ -749,7 +825,7 @@ mod tests {
         assert_eq!(h.insert(Test::new("keyA"), Test::new("val5"))?, None);
 
         assert_eq!(
-            h.into_iter().nth(3).unwrap(),
+            h._into_iter().nth(3).unwrap(),
             (Test::new("keyD"), Test::new("val2"))
         );
         Ok(())
