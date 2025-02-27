@@ -1,4 +1,4 @@
-pub mod cram;
+pub mod cram_impl;
 pub mod cram_error;
 
-pub use cram::*;
+pub use cram_impl::*;

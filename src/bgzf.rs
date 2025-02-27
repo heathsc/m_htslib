@@ -1,4 +1,4 @@
-pub mod bgzf;
+pub mod bgzf_impl;
 pub mod bgzf_error;
 
-pub use bgzf::*;
+pub use bgzf_impl::*;

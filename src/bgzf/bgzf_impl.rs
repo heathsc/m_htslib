@@ -448,7 +448,7 @@ pub struct Bgzf<'a> {
     phantom: PhantomData<&'a BgzfRaw>,
 }
 
-impl<'a> Deref for Bgzf<'a> {
+impl Deref for Bgzf<'_> {
     type Target = BgzfRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -457,17 +457,17 @@ impl<'a> Deref for Bgzf<'a> {
     }
 }
 
-impl<'a> DerefMut for Bgzf<'a> {
+impl DerefMut for Bgzf<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl<'a> Send for Bgzf<'a> {}
-unsafe impl<'a> Sync for Bgzf<'a> {}
+unsafe impl Send for Bgzf<'_> {}
+unsafe impl Sync for Bgzf<'_> {}
 
-impl<'a> Drop for Bgzf<'a> {
+impl Drop for Bgzf<'_> {
     fn drop(&mut self) {
         unsafe {
             bgzf_close(self.inner);
@@ -475,7 +475,7 @@ impl<'a> Drop for Bgzf<'a> {
     }
 }
 
-impl<'a> Bgzf<'a> {
+impl Bgzf<'_> {
     /// Open specified file for reading or writing.
     ///
     /// `mode` matching \[rwag]\[u0-9]\: 'r' for reading, 'w' for
@@ -533,7 +533,7 @@ mod tests {
         name: *mut c_char,
         index: bool,
     }
-    impl<'a> TstBgzf<'a> {
+    impl TstBgzf<'_> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
             let fd = unsafe { libc::mkstemp(name) };
@@ -580,7 +580,7 @@ mod tests {
         }
     }
 
-    impl<'a> Drop for TstBgzf<'a> {
+    impl Drop for TstBgzf<'_> {
         fn drop(&mut self) {
             if !self.name.is_null() {
                 unsafe {

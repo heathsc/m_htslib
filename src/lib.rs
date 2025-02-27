@@ -19,10 +19,9 @@ fn from_c<'a>(c: *const libc::c_char) -> Option<&'a CStr> {
     }
 }
 
-/// Should be replaced by CStr::count_bytes when/if this is stabilized
 #[inline]
 fn cstr_len(c: &CStr) -> usize {
-    unsafe { libc::strlen(c.as_ptr()) }
+    c.count_bytes()
 }
 
 /*

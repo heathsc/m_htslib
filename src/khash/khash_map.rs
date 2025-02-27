@@ -1,17 +1,15 @@
 use std::{
-    fmt::Debug,
     iter::FusedIterator,
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
     ptr,
-    str::FromStr,
 };
 
 use libc::{c_void, size_t};
 
 use super::*;
-use crate::{kstring::KString, KHashError};
+use crate::KHashError;
 
 #[repr(C)]
 pub struct KHashMapRaw<K, V> {
@@ -148,7 +146,7 @@ pub struct KHashMap<'a, K, V> {
     phantom: PhantomData<&'a KHashMapRaw<K, V>>,
 }
 
-impl<'a, K, V> Deref for KHashMap<'a, K, V> {
+impl<K, V> Deref for KHashMap<'_, K, V> {
     type Target = KHashMapRaw<K, V>;
 
     fn deref(&self) -> &Self::Target {
@@ -157,14 +155,14 @@ impl<'a, K, V> Deref for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> DerefMut for KHashMap<'a, K, V> {
+impl<K, V> DerefMut for KHashMap<'_, K, V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl<'a, K, V> Drop for KHashMap<'a, K, V> {
+impl<K, V> Drop for KHashMap<'_, K, V> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // Drop inner
@@ -176,7 +174,7 @@ impl<'a, K, V> Drop for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> Default for KHashMap<'a, K, V> {
+impl<K, V> Default for KHashMap<'_, K, V> {
     fn default() -> Self {
         let inner = unsafe {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
@@ -189,7 +187,7 @@ impl<'a, K, V> Default for KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K: KHashFunc + PartialEq, V> KHashMap<'a, K, V> {
+impl<K: KHashFunc + PartialEq, V> KHashMap<'_, K, V> {
     pub fn with_capacity(sz: KHInt) -> Self {
         let mut h = Self::default();
         h.expand(sz);
@@ -221,10 +219,10 @@ impl<'a, K, V> KHashMap<'a, K, V> {
     /// generic type `K` and `V` for the Key and Value type respectively must be correctly
     /// specified.
     ///
-    /// # Safety:
+    /// # Safety
     ///
     /// `inner` must be a valid, correctly aligned, pointer to a unique, initialized KHashMapRaw struct
-    /// (either initialized from Rust or from C) with the correct types `K` and `V` for the Keys and Values.  
+    /// (either initialized from Rust or from C) with the correct types `K` and `V` for the Keys and Values.
     /// In particular, the pointer must be the only existing pointer to the KHashMapRaw structure,
     /// otherwise the internal structures will be freed twice.
     pub unsafe fn from_raw_ptr(inner: *mut KHashMapRaw<K, V>) -> Self {
@@ -286,7 +284,7 @@ impl<'a, K, V> IntoIterator for &mut KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> IntoIterator for KHashMap<'a, K, V> {
+impl<K, V> IntoIterator for KHashMap<'_, K, V> {
     type Item = (K, V);
     type IntoIter = KIntoIter<K, V>;
 
@@ -337,8 +335,8 @@ impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for KIterMap<'a, K, V> {}
-impl<'a, K, V> FusedIterator for KIterMap<'a, K, V> {}
+impl<K, V> ExactSizeIterator for KIterMap<'_, K, V> {}
+impl<K, V> FusedIterator for KIterMap<'_, K, V> {}
 
 pub struct KIterMapMut<'a, K, V> {
     map: *mut KHashMapRaw<K, V>,
@@ -389,8 +387,8 @@ impl<'a, K, V> Iterator for KIterMapMut<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for KIterMapMut<'a, K, V> {}
-impl<'a, K, V> FusedIterator for KIterMapMut<'a, K, V> {}
+impl<K, V> ExactSizeIterator for KIterMapMut<'_, K, V> {}
+impl<K, V> FusedIterator for KIterMapMut<'_, K, V> {}
 
 pub struct KIterVal<'a, K, V> {
     inner: KIterMap<'a, K, V>,
@@ -423,8 +421,8 @@ impl<'a, K, V> Iterator for KIterVal<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for KIterVal<'a, K, V> {}
-impl<'a, K, V> FusedIterator for KIterVal<'a, K, V> {}
+impl<K, V> ExactSizeIterator for KIterVal<'_, K, V> {}
+impl<K, V> FusedIterator for KIterVal<'_, K, V> {}
 
 pub struct KIntoIter<K, V> {
     map: KHashMapRaw<K, V>,
@@ -509,7 +507,7 @@ pub struct KDrainMap<'a, K, V> {
     inner: KIterMapMut<'a, K, V>,
 }
 
-impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
+impl<K, V> Iterator for KDrainMap<'_, K, V> {
     type Item = (K, V);
     fn next(&mut self) -> Option<Self::Item> {
         let map = unsafe { self.inner.as_mut() };
@@ -538,10 +536,10 @@ impl<'a, K, V> Iterator for KDrainMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for KDrainMap<'a, K, V> {}
-impl<'a, K, V> FusedIterator for KDrainMap<'a, K, V> {}
+impl<K, V> ExactSizeIterator for KDrainMap<'_, K, V> {}
+impl<K, V> FusedIterator for KDrainMap<'_, K, V> {}
 
-impl<'a, K, V> Drop for KDrainMap<'a, K, V> {
+impl<K, V> Drop for KDrainMap<'_, K, V> {
     fn drop(&mut self) {
         let map = unsafe { self.inner.as_mut() };
         map.drop_vals();
@@ -555,7 +553,7 @@ pub struct MapEntry<'a, K, V> {
     idx: KHInt,
 }
 
-impl<'a, K, V> MapEntry<'a, K, V> {
+impl<K, V> MapEntry<'_, K, V> {
     #[inline]
     pub fn idx(&self) -> KHInt {
         self.idx
@@ -578,7 +576,7 @@ pub struct MapEntryMut<'a, K, V> {
     idx: KHInt,
 }
 
-impl<'a, K, V> MapEntryMut<'a, K, V> {
+impl<K, V> MapEntryMut<'_, K, V> {
     #[inline]
     pub fn idx(&self) -> KHInt {
         self.idx
@@ -630,7 +628,9 @@ fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CStr;
+    use crate::kstring::KString;
+    
+    use std::{ffi::CStr, str::FromStr};
 
     #[test]
     fn hash_int_cstr() -> Result<(), KHashError> {

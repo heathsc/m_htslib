@@ -53,9 +53,8 @@ impl CigarBuf {
     #[inline]
     pub fn push_checked(&mut self, e: CigarElem) -> Result<(), CigarError> {
         self.vec.push(e);
-        valid_elem_slice(self).map_err(|e| {
+        valid_elem_slice(self).inspect_err(|_| {
             self.vec.pop();
-            e
         })
     }
 
@@ -185,7 +184,7 @@ fn trim_cigar_vec<I: Iterator<Item = CigarElem>>(
         ql,
         "Mismatch in query length after trim"
     );
-    let rl1 = if rl > x { rl - x } else { 0 };
+    let rl1 = rl.saturating_sub(x);
     assert_eq!(
         cigar_len(&v, |c| c.consumes_reference()),
         rl1,

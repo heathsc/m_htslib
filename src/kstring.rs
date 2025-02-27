@@ -1,4 +1,4 @@
-pub mod kstring;
+pub mod kstring_impl;
 pub mod kstring_error;
 
-pub use kstring::*;
+pub use kstring_impl::*;

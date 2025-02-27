@@ -13,7 +13,7 @@ pub mod htsfile;
 pub use hfile::*;
 pub use hts_format::*;
 pub use hts_idx::*;
-pub use hts_ocstr::*;
+// pub use hts_ocstr::*;
 pub use hts_opt::*;
 pub use hts_thread_pool::*;
 pub use htsfile::*;
@@ -138,4 +138,5 @@ pub enum Whence {
 }
 
 /// Not sure if I will use this, but if I do it won't be exposed to the public API
+#[allow(dead_code)]
 pub(crate) type HtsName2Id = unsafe extern "C" fn(hdr: *mut c_void, str: *const c_char) -> c_int;

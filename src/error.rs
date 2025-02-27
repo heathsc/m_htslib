@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 use super::{bgzf, cram, hts, khash, kstring, sam};
 pub use bgzf::bgzf_error::*;
 pub use cram::cram_error::*;

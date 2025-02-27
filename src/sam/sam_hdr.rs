@@ -8,8 +8,7 @@ use std::{
 };
 
 use super::sam_error::SamError;
-use crate::hts::HtsExactFormat::Sam;
-use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString, HtsError};
+use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString};
 
 #[repr(C)]
 pub struct SamHdrRaw {
@@ -47,11 +46,11 @@ impl<'a> SamHdrTagValue<'a> {
     }
 
     pub fn value_as_cstring(&self) -> Result<CString, SamError> {
-        CString::new(self.value).map_err(|e| SamError::NullInTagValue)
+        CString::new(self.value).map_err(|_| SamError::NullInTagValue)
     }
 }
 
-impl<'a> fmt::Display for SamHdrTagValue<'a> {
+impl fmt::Display for SamHdrTagValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}:{}", self.tag[0], self.tag[1], self.value)
     }
@@ -120,7 +119,7 @@ impl<'a> SamHdrLine<'a> {
     }
 }
 
-impl<'a> fmt::Display for SamHdrLine<'a> {
+impl fmt::Display for SamHdrLine<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Comment(s) => write!(f, "@CO\t{s}"),
@@ -169,7 +168,7 @@ macro_rules! sam_hdr_line {
 
 #[link(name = "hts")]
 extern "C" {
-    fn sam_hdr_read(fp_: *mut HtsFileRaw) -> *mut SamHdrRaw;
+    // fn sam_hdr_read(fp_: *mut HtsFileRaw) -> *mut SamHdrRaw;
     fn sam_hdr_write(fp_: *mut HtsFileRaw, hd_: *const SamHdrRaw) -> c_int;
     fn sam_hdr_init() -> *mut SamHdrRaw;
     fn sam_hdr_destroy(hd_: *mut SamHdrRaw);
@@ -226,8 +225,8 @@ extern "C" {
         ks: *mut KString,
     ) -> c_int;
     fn sam_hdr_count_lines(hd: *mut SamHdrRaw, type_: *const c_char) -> c_int;
-    fn sam_hdr_pg_id(hd: *mut SamHdrRaw, name: *const char) -> *const c_char;
-    fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
+    // fn sam_hdr_pg_id(hd: *mut SamHdrRaw, name: *const char) -> *const c_char;
+    // fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
 }
 
 impl SamHdrRaw {
@@ -295,7 +294,7 @@ impl SamHdrRaw {
     pub fn length(&mut self) -> Result<usize, SamError> {
         match unsafe { sam_hdr_length(self) } {
             size_t::MAX => Err(SamError::OperationFailed),
-            l => Ok(l as usize),
+            l => Ok(l),
         }
     }
 
@@ -477,7 +476,7 @@ pub struct SamHdr<'a> {
     phantom: PhantomData<&'a SamHdrRaw>,
 }
 
-impl<'a> Deref for SamHdr<'a> {
+impl Deref for SamHdr<'_> {
     type Target = SamHdrRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -486,34 +485,34 @@ impl<'a> Deref for SamHdr<'a> {
     }
 }
 
-impl<'a> DerefMut for SamHdr<'a> {
+impl DerefMut for SamHdr<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl<'a> Clone for SamHdr<'a> {
+impl Clone for SamHdr<'_> {
     fn clone(&self) -> Self {
         Self::try_dup(self).expect("Could not duplicate SamHdr")
     }
 }
 
-unsafe impl<'a> Send for SamHdr<'a> {}
-unsafe impl<'a> Sync for SamHdr<'a> {}
+unsafe impl Send for SamHdr<'_> {}
+unsafe impl Sync for SamHdr<'_> {}
 
-impl<'a> Drop for SamHdr<'a> {
+impl Drop for SamHdr<'_> {
     fn drop(&mut self) {
         unsafe { sam_hdr_destroy(self.inner) };
     }
 }
 
-impl<'a> Default for SamHdr<'a> {
+impl Default for SamHdr<'_> {
     fn default() -> Self {
         Self::try_init().expect("Could not allocate new SamHdr")
     }
 }
-impl<'a> SamHdr<'a> {
+impl SamHdr<'_> {
     pub fn new() -> Self {
         Self::default()
     }

@@ -1,13 +1,11 @@
 use std::{
-    fmt::Debug,
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
     ptr,
-    str::FromStr,
 };
 
-use libc::{c_void, size_t};
+use libc::c_void;
 
 use super::*;
 use crate::KHashError;
@@ -33,6 +31,7 @@ impl<K> DerefMut for KHashSetRaw<K> {
 }
 
 impl<K> KHashSetRaw<K> {
+    #[allow(dead_code)]
     fn free(&mut self) {
         // Drop all keys and values
         for i in 0..self.n_buckets() {
@@ -92,7 +91,7 @@ pub struct KHashSet<'a, K> {
     phantom: PhantomData<&'a KHashSetRaw<K>>,
 }
 
-impl<'a, K> Deref for KHashSet<'a, K> {
+impl<K> Deref for KHashSet<'_, K> {
     type Target = KHashSetRaw<K>;
 
     fn deref(&self) -> &Self::Target {
@@ -101,14 +100,14 @@ impl<'a, K> Deref for KHashSet<'a, K> {
     }
 }
 
-impl<'a, K> DerefMut for KHashSet<'a, K> {
+impl<K> DerefMut for KHashSet<'_, K> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl<'a, K> Drop for KHashSet<'a, K> {
+impl<K> Drop for KHashSet<'_, K> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // Drop inner
@@ -120,7 +119,7 @@ impl<'a, K> Drop for KHashSet<'a, K> {
     }
 }
 
-impl<'a, K> Default for KHashSet<'a, K> {
+impl<K> Default for KHashSet<'_, K> {
     fn default() -> Self {
         let inner =
             unsafe { libc::calloc(1, mem::size_of::<KHashSetRaw<K>>()) as *mut KHashSetRaw<K> };
@@ -152,10 +151,10 @@ impl<'a, K> KHashSet<'a, K> {
     /// Make new [KHashSet] instance from raw pointer to [KHashSetRaw]. Note that the
     /// generic type `K` for the Key type must be correctly specified.
     ///
-    /// # Safety:
+    /// # Safety
     ///
     /// `inner` must be a valid, correctly aligned, pointer to a unique, initialized KHashMapRaw struct
-    /// (either initialized from Rust or from C) with the correct type `K` for the Keys.  
+    /// (either initialized from Rust or from C) with the correct type `K` for the Keys.
     /// In particular, the pointer must be the only existing pointer to the KHashSetRaw structure,
     /// otherwise the internal structures will be freed twice.
     pub unsafe fn from_raw_ptr(inner: *mut KHashSetRaw<K>) -> Self {
@@ -175,7 +174,7 @@ impl<'a, K> KHashSet<'a, K> {
         map.into_keys()
     }
 }
-impl<'a, K: KHashFunc + PartialEq> KHashSet<'a, K> {
+impl<K: KHashFunc + PartialEq> KHashSet<'_, K> {
     pub fn with_capacity(sz: KHInt) -> Self {
         let mut h = Self::default();
         h.expand(sz);
@@ -192,7 +191,7 @@ impl<'a, K> IntoIterator for &KHashSet<'a, K> {
     }
 }
 
-impl<'a, K> IntoIterator for KHashSet<'a, K> {
+impl<K> IntoIterator for KHashSet<'_, K> {
     type Item = K;
     type IntoIter = KIntoKeys<K>;
 
@@ -208,15 +207,15 @@ mod tests {
     #[test]
     fn set_int() -> Result<(), KHashError> {
         let mut h = KHashSet::new();
-        assert_eq!(h.insert(42u32)?, false);
-        assert_eq!(h.insert(64)?, false);
-        assert_eq!(h.insert(1)?, false);
-        assert_eq!(h.insert(73)?, false);
-        assert_eq!(h.insert(1024)?, false);
-        assert_eq!(h.insert(64)?, true);
+        assert!(!h.insert(42u32)?);
+        assert!(!h.insert(64)?);
+        assert!(!h.insert(1)?);
+        assert!(!h.insert(73)?);
+        assert!(!h.insert(1024)?);
+        assert!(h.insert(64)?);
         eprintln!("Removing key 1");
-        assert_eq!(h.delete(&1), true);
-        assert_eq!(h.insert(1)?, false);
+        assert!(h.delete(&1));
+        assert!(!h.insert(1)?);
 
         // Test keys iterator
         assert_eq!(h.iter().nth(1), Some(&1));
@@ -231,16 +230,16 @@ mod tests {
     #[test]
     fn set_str() -> Result<(), KHashError> {
         let mut h = KHashSet::new();
-        assert_eq!(h.insert("key1")?, false);
-        assert_eq!(h.insert("key2")?, false);
-        assert_eq!(h.insert("key1")?, true);
+        assert!(!h.insert("key1")?);
+        assert!(!h.insert("key2")?);
+        assert!(h.insert("key1")?);
 
         for k in &h {
             eprintln!("{}", k);
         }
 
         let rf = h.leak();
-        let mut h1 = unsafe { KHashSet::from_raw_ptr(rf) };
+        let h1 = unsafe { KHashSet::from_raw_ptr(rf) };
 
         for k in h1 {
             eprintln!("{}", k);

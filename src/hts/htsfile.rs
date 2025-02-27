@@ -171,7 +171,7 @@ pub struct HtsFile<'a> {
     phantom: PhantomData<&'a HtsFileRaw>,
 }
 
-impl<'a> Deref for HtsFile<'a> {
+impl Deref for HtsFile<'_> {
     type Target = HtsFileRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -180,23 +180,23 @@ impl<'a> Deref for HtsFile<'a> {
     }
 }
 
-impl<'a> DerefMut for HtsFile<'a> {
+impl DerefMut for HtsFile<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl<'a> Send for HtsFile<'a> {}
-unsafe impl<'a> Sync for HtsFile<'a> {}
+unsafe impl Send for HtsFile<'_> {}
+unsafe impl Sync for HtsFile<'_> {}
 
-impl<'a> Drop for HtsFile<'a> {
+impl Drop for HtsFile<'_> {
     fn drop(&mut self) {
         unsafe { hts_close(self.inner) };
     }
 }
 
-impl<'a> HtsFile<'a> {
+impl HtsFile<'_> {
     /// Open a sequence data (SAM/BAM/CRAM) or variant data (VCF/BCF)
     /// or possibly-compressed textual line-orientated file.
     ///

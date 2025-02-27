@@ -13,13 +13,13 @@
 /// While the internal behaviour of KHash and khash are as close as possible, the API of KHash is modelled on
 /// [std::collections::HashMap] and [std::collections::HashSet], with safe methods for inserting, deleting, checking
 /// and iterating over the tables and sets.
-pub mod khash;
+pub mod khash_impl;
 pub mod khash_error;
 pub mod khash_func;
 pub mod khash_map;
 pub mod khash_set;
 
-pub use khash::*;
+pub use khash_impl::*;
 pub use khash_func::*;
 pub use khash_map::*;
 pub use khash_set::*;

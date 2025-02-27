@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::{fmt::Debug, iter::FusedIterator, mem, ptr};
+use std::{iter::FusedIterator, mem, ptr};
 
 use super::khash_func::*;
 use crate::KHashError;
@@ -55,9 +55,11 @@ pub(super) fn is_either(flags: *const u32, i: u32) -> bool {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(super) fn set_is_del_false(flags: *mut u32, i: u32) {
     unsafe { *get_flag_ptr(flags, i) &= !(1 << ((i & 0xf) << 1)) }
 }
+
 #[inline]
 pub(super) fn set_is_empty_false(flags: *mut u32, i: u32) {
     unsafe { *get_flag_ptr(flags, i) &= !(2 << ((i & 0xf) << 1)) }
@@ -115,14 +117,17 @@ impl<K> KHashRaw<K> {
         is_either(self.flags, i)
     }
     #[inline]
+    #[allow(dead_code)]
     pub(super) fn set_is_bin_del_false(&mut self, i: u32) {
         set_is_del_false(self.flags, i)
     }
     #[inline]
+    #[allow(dead_code)]
     pub(super) fn set_is_bin_empty_false(&mut self, i: u32) {
         set_is_empty_false(self.flags, i)
     }
     #[inline]
+    #[allow(dead_code)]
     pub(super) fn set_is_bin_both_false(&mut self, i: u32) {
         set_is_both_false(self.flags, i)
     }
@@ -518,8 +523,8 @@ impl<'a, K> Iterator for KIter<'a, K> {
     }
 }
 
-impl<'a, K> ExactSizeIterator for KIter<'a, K> {}
-impl<'a, K> FusedIterator for KIter<'a, K> {}
+impl<K> ExactSizeIterator for KIter<'_, K> {}
+impl<K> FusedIterator for KIter<'_, K> {}
 
 pub struct KIntoKeys<K> {
     map: KHashRaw<K>,
@@ -568,7 +573,7 @@ impl<'a, K> KDrain<'a, K> {
         &mut *self.map
     }
 }
-impl<'a, K> Iterator for KDrain<'a, K> {
+impl<K> Iterator for KDrain<'_, K> {
     type Item = K;
     fn next(&mut self) -> Option<Self::Item> {
         let map = unsafe { self.as_mut() };
@@ -595,10 +600,10 @@ impl<'a, K> Iterator for KDrain<'a, K> {
     }
 }
 
-impl<'a, K> ExactSizeIterator for KDrain<'a, K> {}
-impl<'a, K> FusedIterator for KDrain<'a, K> {}
+impl<K> ExactSizeIterator for KDrain<'_, K> {}
+impl<K> FusedIterator for KDrain<'_, K> {}
 
-impl<'a, K> Drop for KDrain<'a, K> {
+impl<K> Drop for KDrain<'_, K> {
     fn drop(&mut self) {
         let map = unsafe { self.as_mut() };
         map._drop_keys();

@@ -338,40 +338,40 @@ macro_rules! set_opt {
 #[macro_export]
 macro_rules! do_val {
     ($f: ident, $fp:expr, $x:expr, $y:expr) => {
-        unsafe { $f($fp, $x, *$y) }
+        $f($fp, $x, *$y)
     };
 }
 
 #[macro_export]
 macro_rules! do_enum {
     ($f: ident, $fp:expr, $x:expr, $y:expr) => {
-        unsafe { $f($fp, $x, *$y as c_int) }
+        $f($fp, $x, *$y as c_int)
     };
 }
 
 #[macro_export]
 macro_rules! do_ptr {
     ($f: ident, $fp:expr, $x:expr, $y:expr) => {
-        unsafe { $f($fp, $x, $y.as_ptr()) }
+        $f($fp, $x, $y.as_ptr())
     };
 }
 
 #[macro_export]
 macro_rules! do_none {
     ($f: ident, $fp:expr, $x:expr) => {
-        unsafe { $f($fp, $x) }
+        $f($fp, $x)
     };
 }
 
 #[macro_export]
 macro_rules! do_bool {
     ($f: ident, $fp:expr, $x:expr, $y:expr) => {
-        unsafe { $f($fp, $x, if *$y { 1 } else { 0 }) }
+        $f($fp, $x, if *$y { 1 } else { 0 })
     };
 }
 
 pub fn hts_file_set_opt(fp: &mut HtsFileRaw, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
-    if set_opt!(hts_set_opt, fp, opt) == 0 {
+    if unsafe { set_opt!(hts_set_opt, fp, opt) } == 0 {
         Ok(())
     } else {
         Err(HtsError::OperationFailed)
@@ -379,7 +379,7 @@ pub fn hts_file_set_opt(fp: &mut HtsFileRaw, opt: &mut HtsFmtOption) -> Result<(
 }
 
 pub fn cram_file_set_opt(fd: &mut CramFdRaw, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
-    if set_opt!(cram_set_option, fd, opt) == 0 {
+    if unsafe { set_opt!(cram_set_option, fd, opt) } == 0 {
         Ok(())
     } else {
         Err(HtsError::OperationFailed)

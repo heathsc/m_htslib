@@ -1,8 +1,5 @@
 use libc::{c_char, c_void};
-use std::{
-    ffi::{CStr, CString},
-    marker::PhantomData,
-};
+use std::{ffi::CStr, marker::PhantomData};
 
 /// Owned CStr
 /// The difference with CString is that the memory was allocated with libc::free(), and so needs
@@ -15,14 +12,14 @@ pub struct OCStr<'a> {
     phantom: PhantomData<&'a c_char>,
 }
 
-impl<'a> Drop for OCStr<'a> {
+impl Drop for OCStr<'_> {
     fn drop(&mut self) {
         unsafe { libc::free(self.inner as *mut c_void) }
     }
 }
 
-impl<'a> OCStr<'a> {
-    /// Wrap a raw ptr to a C string in a OCStr.  
+impl OCStr<'_> {
+    /// Wrap a raw ptr to a C string in a OCStr.
     ///
     /// # Safety
     ///
@@ -61,8 +58,9 @@ pub(crate) unsafe fn cstr_array_into_boxed_slice<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CString;
     use super::*;
-
+    
     fn make_c_allocated_string(s: &str) -> *mut c_char {
         let cs = CString::new(s).unwrap();
         let ptr = unsafe { libc::strdup(cs.as_ptr() as *mut c_char) };

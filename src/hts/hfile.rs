@@ -127,7 +127,6 @@ impl HFileRaw {
     ///
     /// Bytes will be read into the buffer up to and including a delimiter, until
     /// EOF is reached, or _size-1_ bytes have been written, whichever comes first
-
     #[inline]
     pub fn get_delim<'a>(
         &mut self,
@@ -252,7 +251,7 @@ impl HFileRaw {
             let n = n.min(nbytes1) as size_t;
             unsafe {
                 libc::memcpy(self.begin as *mut c_void, data.as_ptr() as *const c_void, n);
-                self.begin = self.begin.offset(n as isize)
+                self.begin = self.begin.add(n)
             }
             if n == nbytes {
                 Ok(n as size_t)
@@ -273,6 +272,7 @@ impl HFileRaw {
 
     /// Write a character to the stream
     #[inline]
+    #[allow(dead_code)]
     fn putc(&mut self, c: c_char) -> Result<(), HtsError> {
         if self.begin < self.limit {
             unsafe {
@@ -314,7 +314,7 @@ pub struct HFile<'a> {
     phantom: PhantomData<&'a HFileRaw>,
 }
 
-impl<'a> Deref for HFile<'a> {
+impl Deref for HFile<'_> {
     type Target = HFileRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -323,23 +323,23 @@ impl<'a> Deref for HFile<'a> {
     }
 }
 
-impl<'a> DerefMut for HFile<'a> {
+impl DerefMut for HFile<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl<'a> Send for HFile<'a> {}
-unsafe impl<'a> Sync for HFile<'a> {}
+unsafe impl Send for HFile<'_> {}
+unsafe impl Sync for HFile<'_> {}
 
-impl<'a> Drop for HFile<'a> {
+impl Drop for HFile<'_> {
     fn drop(&mut self) {
         unsafe { hclose(self.inner) };
     }
 }
 
-impl<'a> HFile<'a> {
+impl HFile<'_> {
     /// Open the named file or URL as a stream
     /// The usual `fopen(3)` _mode_ letters are supported: one of
     /// `r` (read), `w` (write), `a` (append), optionally followed by any of
@@ -423,7 +423,7 @@ mod tests {
         name: *mut c_char,
     }
 
-    impl<'a> TstHFile<'a> {
+    impl TstHFile<'_> {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
             let fd = unsafe { libc::mkstemp(name) };
@@ -434,7 +434,7 @@ mod tests {
         }
     }
 
-    impl<'a> Drop for TstHFile<'a> {
+    impl Drop for TstHFile<'_> {
         fn drop(&mut self) {
             unsafe {
                 libc::unlink(self.name);

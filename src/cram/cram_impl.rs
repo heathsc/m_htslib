@@ -114,7 +114,7 @@ pub struct CramFd<'a> {
     phantom: PhantomData<&'a CramFdRaw>,
 }
 
-impl<'a> Deref for CramFd<'a> {
+impl Deref for CramFd<'_> {
     type Target = CramFdRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -123,17 +123,17 @@ impl<'a> Deref for CramFd<'a> {
     }
 }
 
-impl<'a> DerefMut for CramFd<'a> {
+impl DerefMut for CramFd<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl<'a> Send for CramFd<'a> {}
-unsafe impl<'a> Sync for CramFd<'a> {}
+unsafe impl Send for CramFd<'_> {}
+unsafe impl Sync for CramFd<'_> {}
 
-impl<'a> Drop for CramFd<'a> {
+impl Drop for CramFd<'_> {
     fn drop(&mut self) {
         unsafe {
             cram_close(self.inner);
@@ -141,7 +141,7 @@ impl<'a> Drop for CramFd<'a> {
     }
 }
 
-impl<'a> CramFd<'a> {
+impl CramFd<'_> {
     #[inline]
     pub fn open(name: &CStr, mode: &CStr) -> Result<Self, CramError> {
         Self::make_cram_file(unsafe { cram_open(name.as_ptr(), mode.as_ptr()) })

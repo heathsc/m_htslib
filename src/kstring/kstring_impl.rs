@@ -106,7 +106,7 @@ impl KString {
                 let ptr = self.s.add(self.l);
                 libc::memcpy(ptr as *mut c_void, p.as_ptr() as *const c_void, l);
                 self.l += l;
-                *(ptr.offset(l as isize)) = 0;
+                *(ptr.add(l)) = 0;
             }
         }
         Ok(())
@@ -191,7 +191,7 @@ mod tests {
         ks.putc(b'l').unwrap();
         assert_eq!(ks.len(), 3);
         let s = ks.as_slice().unwrap();
-        assert_eq!(s, &[b'H', b'e', b'l']);
+        assert_eq!(s, b"Hel");
     }
 
     #[test]

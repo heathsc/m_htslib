@@ -93,7 +93,9 @@ extern "C" {
         unmapped: *mut u64,
     ) -> c_int;
     fn hts_idx_get_n_no_coor(idx: *const HtsIdxRaw) -> u64;
+
     /// Not sure if I will be using this or not yet
+    #[allow(dead_code)]
     fn hts_idx_seqnames(
         idx: *const HtsIdxRaw,
         n: c_int,
@@ -260,7 +262,6 @@ impl HtsIdxRaw {
     /// that is mapped to the target).  This function returns this information if it
     /// is available. If this is called on an index type that is not BAI or CSI,
     /// [HtsError::StatsUnavailable] is returned
-
     #[inline]
     pub fn get_stat(&self, tid: c_int) -> Result<(u64, u64), HtsError> {
         if matches!(self.fmt(), IdxFmt::Bai | IdxFmt::Csi) {
@@ -301,7 +302,7 @@ pub struct HtsIdx<'a> {
     phantom: PhantomData<&'a HtsIdxRaw>,
 }
 
-impl<'a> Deref for HtsIdx<'a> {
+impl Deref for HtsIdx<'_> {
     type Target = HtsIdxRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -310,23 +311,23 @@ impl<'a> Deref for HtsIdx<'a> {
     }
 }
 
-impl<'a> DerefMut for HtsIdx<'a> {
+impl DerefMut for HtsIdx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-unsafe impl<'a> Send for HtsIdx<'a> {}
-unsafe impl<'a> Sync for HtsIdx<'a> {}
+unsafe impl Send for HtsIdx<'_> {}
+unsafe impl Sync for HtsIdx<'_> {}
 
-impl<'a> Drop for HtsIdx<'a> {
+impl Drop for HtsIdx<'_> {
     fn drop(&mut self) {
         unsafe { hts_idx_destroy(self.inner) };
     }
 }
 
-impl<'a> HtsIdx<'a> {
+impl HtsIdx<'_> {
     /// Create a BAI/CSI/TBI type index structure
     ///
     /// `n` - Initial number of targets

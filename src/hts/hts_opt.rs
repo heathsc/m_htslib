@@ -44,7 +44,7 @@ pub struct HtsOpt<'a> {
     phantom: PhantomData<&'a HtsOptRaw>,
 }
 
-impl<'a> Deref for HtsOpt<'a> {
+impl Deref for HtsOpt<'_> {
     type Target = HtsOptRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -52,15 +52,15 @@ impl<'a> Deref for HtsOpt<'a> {
     }
 }
 
-impl<'a> DerefMut for HtsOpt<'a> {
+impl DerefMut for HtsOpt<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner }
     }
 }
-unsafe impl<'a> Send for HtsOpt<'a> {}
-unsafe impl<'a> Sync for HtsOpt<'a> {}
+unsafe impl Send for HtsOpt<'_> {}
+unsafe impl Sync for HtsOpt<'_> {}
 
-impl<'a> Default for HtsOpt<'a> {
+impl Default for HtsOpt<'_> {
     fn default() -> Self {
         Self {
             inner: ptr::null_mut(),
@@ -69,7 +69,7 @@ impl<'a> Default for HtsOpt<'a> {
     }
 }
 
-impl<'a> Drop for HtsOpt<'a> {
+impl Drop for HtsOpt<'_> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             unsafe { hts_opt_free(self.inner) }
@@ -77,7 +77,7 @@ impl<'a> Drop for HtsOpt<'a> {
     }
 }
 
-impl<'a> HtsOpt<'a> {
+impl HtsOpt<'_> {
     /// Parses arg and adds it to HtsOpt
     #[inline]
     pub fn add(&mut self, arg: &CStr) -> Result<(), HtsError> {

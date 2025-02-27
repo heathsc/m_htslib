@@ -13,7 +13,7 @@ impl KHashFunc for u32 {
 
 impl KHashFunc for u64 {
     fn hash(&self) -> u32 {
-        (*self >> 33 ^ (*self) ^ (*self) << 11) as u32
+        ((*self >> 33) ^ (*self) ^ ((*self) << 11)) as u32
     }
 }
 
@@ -40,7 +40,7 @@ impl KHashFunc for *const libc::c_char {
 impl KHashFunc for KString {
     #[inline]
     fn hash(&self) -> u32 {
-        self.as_slice().map(|p| hash_u8_slice(p)).unwrap_or(0)
+        self.as_slice().map(hash_u8_slice).unwrap_or(0)
     }
 }
 
@@ -72,7 +72,7 @@ impl KHashFunc for String {
     }
 }
 
-impl<'a> KHashFunc for OCStr<'a> {
+impl KHashFunc for OCStr<'_> {
     fn hash(&self) -> u32 {
         let mut p = self.as_ptr();
         unsafe {
