@@ -40,7 +40,7 @@ unsafe impl Send for HtsTPool<'_> {}
 unsafe impl Sync for HtsTPool<'_> {}
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_tpool_init(n: c_int) -> *mut HtsTPoolRaw;
     fn hts_tpool_destroy(p: *mut HtsTPoolRaw);
     fn hts_tpool_size(p: *const HtsTPoolRaw) -> c_int;

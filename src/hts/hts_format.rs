@@ -387,7 +387,7 @@ pub fn cram_file_set_opt(fd: &mut CramFdRaw, opt: &mut HtsFmtOption) -> Result<(
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_parse_format(format: *mut HtsFormat, str: *const c_char) -> c_int;
     fn hts_parse_opt_list(format: *mut HtsFormat, str: *const c_char) -> c_int;
     fn hts_format_file_extension(fmt: *const HtsFormat) -> *const c_char;

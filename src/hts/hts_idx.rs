@@ -48,7 +48,7 @@ pub struct HtsIdxRaw {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_idx_init(
         n: c_int,
         fmt: c_int,

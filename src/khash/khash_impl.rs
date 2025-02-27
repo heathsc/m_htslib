@@ -93,7 +93,7 @@ impl<K> Drop for KHashRaw<K> {
 impl<K> KHashRaw<K> {
     #[inline]
     pub(super) unsafe fn get_key_unchecked(&self, i: u32) -> &K {
-        &*self.keys.add(i as usize)
+        unsafe { &*self.keys.add(i as usize) }
     }
 
     #[inline]
@@ -172,7 +172,7 @@ impl<K> KHashRaw<K> {
     }
     #[inline]
     pub(super) unsafe fn _drop_key(&mut self, i: KHInt) -> K {
-        ptr::read(self.keys.add(i as usize))
+       unsafe { ptr::read(self.keys.add(i as usize)) }
     }
 
     // Deletes a key from the hash
@@ -488,7 +488,7 @@ pub struct KIter<'a, K> {
 
 impl<'a, K> KIter<'a, K> {
     unsafe fn as_ref(&self) -> &'a KHashRaw<K> {
-        &*self.map
+        unsafe { &*self.map }
     }
     pub(super) fn make(map: *const KHashRaw<K>) -> Self {
         Self {
@@ -567,10 +567,10 @@ pub struct KDrain<'a, K> {
 
 impl<'a, K> KDrain<'a, K> {
     unsafe fn as_ref(&self) -> &'a KHashRaw<K> {
-        &*self.map
+        unsafe { &*self.map }
     }
     unsafe fn as_mut(&mut self) -> &'a mut KHashRaw<K> {
-        &mut *self.map
+        unsafe { &mut *self.map }
     }
 }
 impl<K> Iterator for KDrain<'_, K> {

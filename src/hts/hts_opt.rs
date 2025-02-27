@@ -32,7 +32,7 @@ pub enum HtsProfileOption {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_opt_free(opts: *mut HtsOptRaw);
     fn hts_opt_add(opts: *mut *mut HtsOptRaw, c_arg: *const c_char) -> c_int;
 }

@@ -28,7 +28,7 @@ pub struct CramRange {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn cram_open(path: *const c_char, mode: *const c_char) -> *mut CramFdRaw;
     fn cram_dopen(fp: *mut HFileRaw, fn_: *const c_char, mode: *const c_char) -> *mut CramFdRaw;
     fn cram_close(fp: *mut CramFdRaw) -> c_int;

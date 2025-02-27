@@ -34,7 +34,7 @@ pub enum HtsLogLevel {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_version() -> *const c_char;
     fn hts_features() -> c_uint;
     fn hts_test_feature(feature: c_uint) -> *const c_char;

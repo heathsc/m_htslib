@@ -55,7 +55,7 @@ pub struct HtsFileRaw {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hts_open(fn_: *const c_char, mode: *const c_char) -> *mut HtsFileRaw;
     fn hts_open_format(
         fn_: *const c_char,

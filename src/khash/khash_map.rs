@@ -56,12 +56,12 @@ impl<K, V> KHashMapRaw<K, V> {
     }
     #[inline]
     unsafe fn get_val_unchecked(&self, i: u32) -> &V {
-        &*self.vals.add(i as usize)
+        unsafe { &*self.vals.add(i as usize) }
     }
 
     #[inline]
     unsafe fn get_val_unchecked_mut(&mut self, i: u32) -> &mut V {
-        &mut *self.vals.add(i as usize)
+        unsafe { &mut *self.vals.add(i as usize) }
     }
 
     #[inline]
@@ -74,7 +74,7 @@ impl<K, V> KHashMapRaw<K, V> {
     }
     #[inline]
     unsafe fn _drop_val(&mut self, i: KHInt) -> V {
-        ptr::read(self.vals.add(i as usize))
+        unsafe { ptr::read(self.vals.add(i as usize)) }
     }
     #[inline]
     pub fn iter(&self) -> KIterMap<K, V> {
@@ -302,7 +302,7 @@ pub struct KIterMap<'a, K, V> {
 impl<'a, K, V> KIterMap<'a, K, V> {
     #[inline]
     unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
-        {
+        unsafe {
             &*self.map
         }
     }
@@ -347,12 +347,12 @@ pub struct KIterMapMut<'a, K, V> {
 impl<'a, K, V> KIterMapMut<'a, K, V> {
     #[inline]
     unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
-        &*self.map
+        unsafe { &*self.map }
     }
 
     #[inline]
     unsafe fn as_mut(&mut self) -> &'a mut KHashMapRaw<K, V> {
-        &mut *self.map
+        unsafe { &mut *self.map }
     }
 }
 

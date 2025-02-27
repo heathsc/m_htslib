@@ -68,7 +68,7 @@ pub struct BgzfRaw {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn bgzf_open(path: *const c_char, mode: *const c_char) -> *mut BgzfRaw;
     fn bgzf_dopen(fd: c_int, mode: *const c_char) -> *mut BgzfRaw;
     fn bgzf_hopen(fp: *mut HFileRaw, mode: *const c_char) -> *mut BgzfRaw;

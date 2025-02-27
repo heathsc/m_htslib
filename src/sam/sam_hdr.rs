@@ -167,7 +167,7 @@ macro_rules! sam_hdr_line {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     // fn sam_hdr_read(fp_: *mut HtsFileRaw) -> *mut SamHdrRaw;
     fn sam_hdr_write(fp_: *mut HtsFileRaw, hd_: *const SamHdrRaw) -> c_int;
     fn sam_hdr_init() -> *mut SamHdrRaw;

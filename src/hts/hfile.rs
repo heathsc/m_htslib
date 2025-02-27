@@ -38,7 +38,7 @@ pub struct HFileRaw {
 }
 
 #[link(name = "hts")]
-extern "C" {
+unsafe extern "C" {
     fn hopen(fname: *const c_char, mode: *const c_char, ...) -> *mut HFileRaw;
     fn hdopen(fd: c_int, mode: *const c_char) -> *mut HFileRaw;
     fn hisremote(fname: *const c_char) -> c_int;
