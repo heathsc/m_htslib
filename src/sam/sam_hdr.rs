@@ -1,4 +1,4 @@
-use libc::{c_char, c_int, size_t};
+use libc::{c_char, c_int, size_t, c_void};
 use std::{
     ffi::{CStr, CString},
     fmt::{self, Formatter},
@@ -10,9 +10,22 @@ use std::{
 use super::sam_error::SamError;
 use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString};
 
+#[repr(C)] 
+pub struct SamHrecsRaw {
+     _unused: [u8; 0],
+}
+
 #[repr(C)]
 pub struct SamHdrRaw {
-    _unused: [u8; 0],
+    n_targets: i32,
+    ignore_sam_err: i32,
+    l_text: size_t,
+    cigar_tab: *const i8,
+    target_name: *mut *mut c_char,
+    text: *mut c_char,
+    sdict: *mut c_void,
+    hrecs: *mut SamHrecsRaw,
+    ref_counts: u32,
 }
 
 pub struct SamHdrTagValue<'a> {
@@ -314,7 +327,9 @@ impl SamHdrRaw {
         self.add_lines(&cs)
     }
 
+    /* 
     pub fn add_pg(&mut self, name: &CStr, tag_values: &[SamHdrTagValue]) -> Result<(), SamError> {
+        
         // Check for ID, PP and PN tags in specified line
         let mut id_tag = None;
         let mut pp_tag = None;
@@ -346,6 +361,7 @@ impl SamHdrRaw {
 
         Ok(())
     }
+*/
 
     pub fn remove_except(
         &mut self,
