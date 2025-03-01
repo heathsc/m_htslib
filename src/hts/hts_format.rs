@@ -438,4 +438,8 @@ impl HtsFormat {
         unsafe { libc::free(cs.as_ptr() as *mut c_void) }
         s
     }
+    
+    pub fn exact_format(&self) -> &HtsExactFormat {
+        &self.format
+    }
 }
