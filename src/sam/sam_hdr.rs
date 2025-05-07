@@ -545,7 +545,10 @@ impl SamHdr<'_> {
     }
 
     pub fn read(hts_file: &mut HtsFileRaw) -> Result<Self, SamError> {
-        Self::make_sam_hdr(unsafe {sam_hdr_read(hts_file as *mut HtsFileRaw)}, SamError::FailedHeaderRead)
+        Self::make_sam_hdr(
+            unsafe { sam_hdr_read(hts_file as *mut HtsFileRaw) },
+            SamError::FailedHeaderRead,
+        )
     }
 
     fn make_sam_hdr(hdr: *mut SamHdrRaw, e: SamError) -> Result<Self, SamError> {
@@ -564,7 +567,7 @@ impl SamHdr<'_> {
 mod tests {
     use super::*;
     use crate::{HtsError, hts::HtsFile};
-    
+
     #[test]
     fn construct() -> Result<(), SamError> {
         // Make empty header structure and add a line to it
@@ -587,12 +590,14 @@ mod tests {
         assert_eq!(l, 92);
         Ok(())
     }
-    
+
     #[test]
     fn read_hdr() -> Result<(), HtsError> {
-        let mut samfile = HtsFile::open(c"test/realn01.sam",c"r")?;
-        let _ = SamHdr::read(&mut samfile)?;
-        
+        let mut samfile = HtsFile::open(c"test/realn01.sam", c"r")?;
+        let hdr = SamHdr::read(&mut samfile)?;
+        assert_eq!(hdr.tid2name(0), Some(c"000000F"));
+        assert_eq!(hdr.tid2name(1), None);
+        assert_eq!(hdr.tid2len(0), Some(686));
         Ok(())
     }
 }
