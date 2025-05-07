@@ -1,5 +1,3 @@
-use std::convert::From;
-
 use thiserror::Error;
 
 use crate::{CigarError, CramError};
@@ -31,19 +29,7 @@ pub enum SamError {
     #[error("PG ID Tag referred to in PP tag does not exist in SAM header")]
     PpRefTagMissing,
     #[error("Cram Error: {0}")]
-    CramError(CramError),
+    CramError(#[from] CramError),
     #[error("Cigar Error: {0}")]
-    CigarError(CigarError),
-}
-
-impl From<CramError> for SamError {
-    fn from(value: CramError) -> Self {
-        Self::CramError(value)
-    }
-}
-
-impl From<CigarError> for SamError {
-    fn from(value: CigarError) -> Self {
-        Self::CigarError(value)
-    }
+    CigarError(#[from] CigarError),
 }
