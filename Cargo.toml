@@ -7,5 +7,5 @@ edition = "2024"
 
 [dependencies]
 libc = "~0.2"
-c2rust-bitfields = "~0.18"
-thiserror = "~1.0"
+c2rust-bitfields = "~0.20"
+thiserror = "~2.0"

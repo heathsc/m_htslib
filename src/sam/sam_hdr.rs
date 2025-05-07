@@ -1,4 +1,4 @@
-use libc::{c_char, c_int, size_t, c_void};
+use libc::{c_char, c_int, c_void, size_t};
 use std::{
     ffi::{CStr, CString},
     fmt::{self, Formatter},
@@ -10,9 +10,9 @@ use std::{
 use super::sam_error::SamError;
 use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString};
 
-#[repr(C)] 
+#[repr(C)]
 pub struct SamHrecsRaw {
-     _unused: [u8; 0],
+    _unused: [u8; 0],
 }
 
 #[repr(C)]
@@ -151,37 +151,42 @@ macro_rules! sam_hdr_line {
         $(
            tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
         )*
-        Ok(tmp_line)
+        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        tl
     }};
     ( "SQ", $( $t: expr, $v:expr ),* ) => {{
         let mut tmp_line = SamHdrLine::line(SamHdrType::Sq);
         $(
            tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
         )*
-        Ok(tmp_line)
+        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        tl
     }};
     ( "RG", $( $t: expr, $v:expr ),* ) => {{
         let mut tmp_line = SamHdrLine::line(SamHdrType::Rg);
         $(
            tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
         )*
-        Ok(tmp_line)
+        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        tl
     }};
     ( "PG", $( $t: expr, $v:expr ),* ) => {{
         let mut tmp_line = SamHdrLine::line(SamHdrType::Pg);
         $(
            tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
         )*
-        Ok(tmp_line)
+        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        tl
     }};
     ( "CO", $s:expr ) => {
-        Ok(SamHdrLine::comment($s))
+        let tl: Result<SamHdrLine, SamError> = Ok(SamHdrLine::comment($s));
+        tl
     };
 }
 
 #[link(name = "hts")]
 unsafe extern "C" {
-    // fn sam_hdr_read(fp_: *mut HtsFileRaw) -> *mut SamHdrRaw;
+    fn sam_hdr_read(fp_: *mut HtsFileRaw) -> *mut SamHdrRaw;
     fn sam_hdr_write(fp_: *mut HtsFileRaw, hd_: *const SamHdrRaw) -> c_int;
     fn sam_hdr_init() -> *mut SamHdrRaw;
     fn sam_hdr_destroy(hd_: *mut SamHdrRaw);
@@ -289,11 +294,7 @@ impl SamHdrRaw {
     #[inline]
     pub fn name2tid(&mut self, cname: &CStr) -> Option<usize> {
         let tid = unsafe { sam_hdr_name2tid(self, cname.as_ptr()) };
-        if tid < 0 {
-            None
-        } else {
-            Some(tid as usize)
-        }
+        if tid < 0 { None } else { Some(tid as usize) }
     }
 
     /// Returns the current header txt.  Can be invalidated by a call to another header function
@@ -327,41 +328,41 @@ impl SamHdrRaw {
         self.add_lines(&cs)
     }
 
-    /* 
-    pub fn add_pg(&mut self, name: &CStr, tag_values: &[SamHdrTagValue]) -> Result<(), SamError> {
-        
-        // Check for ID, PP and PN tags in specified line
-        let mut id_tag = None;
-        let mut pp_tag = None;
-        let mut pn_tag = None;
-        for tv in tag_values {
-            match tv.tag {
-                ['I', 'D'] => {
-                    if self
-                        .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
-                        .is_some()
-                    {
-                        return Err(SamError::PgIdTagExists);
-                    }
-                    id_tag = Some(tv.value())
-                }
-                ['P', 'P'] => {
-                    if self
-                        .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
-                        .is_none()
-                    {
-                        return Err(SamError::PpRefTagMissing);
-                    }
-                    pp_tag = Some(tv.value())
-                }
-                ['P', 'N'] => pn_tag = Some(tv.value()),
-                _ => (),
-            }
-        }
+    /*
+        pub fn add_pg(&mut self, name: &CStr, tag_values: &[SamHdrTagValue]) -> Result<(), SamError> {
 
-        Ok(())
-    }
-*/
+            // Check for ID, PP and PN tags in specified line
+            let mut id_tag = None;
+            let mut pp_tag = None;
+            let mut pn_tag = None;
+            for tv in tag_values {
+                match tv.tag {
+                    ['I', 'D'] => {
+                        if self
+                            .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
+                            .is_some()
+                        {
+                            return Err(SamError::PgIdTagExists);
+                        }
+                        id_tag = Some(tv.value())
+                    }
+                    ['P', 'P'] => {
+                        if self
+                            .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
+                            .is_none()
+                        {
+                            return Err(SamError::PpRefTagMissing);
+                        }
+                        pp_tag = Some(tv.value())
+                    }
+                    ['P', 'N'] => pn_tag = Some(tv.value()),
+                    _ => (),
+                }
+            }
+
+            Ok(())
+        }
+    */
 
     pub fn remove_except(
         &mut self,
@@ -477,11 +478,7 @@ impl SamHdrRaw {
     }
     pub fn count_lines(&mut self, typ: &CStr) -> Option<usize> {
         let n = unsafe { sam_hdr_count_lines(self, typ.as_ptr()) };
-        if n >= 0 {
-            Some(n as usize)
-        } else {
-            None
-        }
+        if n >= 0 { Some(n as usize) } else { None }
     }
 }
 
@@ -547,7 +544,10 @@ impl SamHdr<'_> {
         )
     }
 
-    // pub fn read()
+    pub fn read(hts_file: &mut HtsFileRaw) -> Result<Self, SamError> {
+        Self::make_sam_hdr(unsafe {sam_hdr_read(hts_file as *mut HtsFileRaw)}, SamError::FailedHeaderRead)
+    }
+
     fn make_sam_hdr(hdr: *mut SamHdrRaw, e: SamError) -> Result<Self, SamError> {
         if hdr.is_null() {
             Err(e)
@@ -563,7 +563,8 @@ impl SamHdr<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::{HtsError, hts::HtsFile};
+    
     #[test]
     fn construct() -> Result<(), SamError> {
         // Make empty header structure and add a line to it
@@ -584,6 +585,14 @@ mod tests {
         let l = cstr_len(cs);
         assert_eq!(hdr.length().unwrap(), l);
         assert_eq!(l, 92);
+        Ok(())
+    }
+    
+    #[test]
+    fn read_hdr() -> Result<(), HtsError> {
+        let mut samfile = HtsFile::open(c"test/realn01.sam",c"r")?;
+        let _ = SamHdr::read(&mut samfile)?;
+        
         Ok(())
     }
 }

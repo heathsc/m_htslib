@@ -1,8 +1,14 @@
+use std::convert::From;
+
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+use crate::{CigarError, CramError};
+
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum SamError {
-    #[error("Failed to write SAM header")]
+    #[error("Failed to read SAM/BAM/CRAM header")]
+    FailedHeaderRead,
+    #[error("Failed to write SAM/BAM/CRAM header")]
     FailedHeaderWrite,
     #[error("Failed to add line to SAM/BAM/CRAM header")]
     FailedAddHeaderLine,
@@ -24,4 +30,20 @@ pub enum SamError {
     PgIdTagExists,
     #[error("PG ID Tag referred to in PP tag does not exist in SAM header")]
     PpRefTagMissing,
+    #[error("Cram Error: {0}")]
+    CramError(CramError),
+    #[error("Cigar Error: {0}")]
+    CigarError(CigarError),
+}
+
+impl From<CramError> for SamError {
+    fn from(value: CramError) -> Self {
+        Self::CramError(value)
+    }
+}
+
+impl From<CigarError> for SamError {
+    fn from(value: CigarError) -> Self {
+        Self::CigarError(value)
+    }
 }
