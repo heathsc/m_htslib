@@ -62,14 +62,10 @@ impl KString {
     pub fn clear(&mut self) {
         self.l = 0
     }
-    
+
     pub fn resize(&mut self, size: size_t) -> Result<(), KStringError> {
         if self.m < size {
-            let size = if size > (usize::MAX >> 2) {
-                size
-            } else {
-                size + (size >> 1)
-            };
+            let size = crate::roundup(size);
             let p = if self.s.is_null() {
                 unsafe { libc::malloc(size) }
             } else {
@@ -82,6 +78,7 @@ impl KString {
             } else {
                 self.s = p;
                 self.m = size;
+                unsafe { *p.add(self.l) = 0 }
             }
         }
         Ok(())
@@ -123,14 +120,13 @@ impl KString {
     }
 
     pub fn to_cstr(&self) -> Option<&CStr> {
-        if self.s.is_null() {
-            None
-        } else {
-            Some(unsafe { CStr::from_ptr(self.s) })
+        unsafe {
+            self._as_slice(true)
+                .map(|p| CStr::from_bytes_with_nul_unchecked(p))
         }
     }
 
-    pub fn _as_slice(&self, inc_zero: bool) -> Option<&[u8]> {
+    fn _as_slice(&self, inc_zero: bool) -> Option<&[u8]> {
         if self.s.is_null() {
             None
         } else {
@@ -141,7 +137,7 @@ impl KString {
         }
     }
 
-    pub fn _as_slice_mut(&mut self, inc_zero: bool) -> Option<&mut [u8]> {
+    fn _as_slice_mut(&mut self, inc_zero: bool) -> Option<&mut [u8]> {
         if self.s.is_null() {
             None
         } else {

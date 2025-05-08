@@ -32,4 +32,16 @@ pub enum SamError {
     CramError(#[from] CramError),
     #[error("Cigar Error: {0}")]
     CigarError(#[from] CigarError),
+    #[error("Error setting query name for Bam Record")]
+    SetQnameFailed,
+    #[error("Error parsing Sam Record")]
+    ParseSamRecordFailed,
+    #[error("Empty query name")]
+    EmptyQueryName,
+    #[error("Query name too long")]
+    QueryTooLong,
+    #[error("Empty Flag Field")]
+    EmptyFlagField,
+    #[error("Bad Flag Format")]
+    BadFlagFormat,
 }
