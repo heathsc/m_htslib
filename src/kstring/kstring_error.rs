@@ -1,3 +1,5 @@
+use std::str::Utf8Error;
+
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -8,4 +10,6 @@ pub enum KStringError {
     SizeRequestTooLarge,
     #[error("Internal null character in supplied slice")]
     InternalNullInSlice,
+    #[error("Utf8 Error: {0}")]
+    Utf8Error(#[from] Utf8Error),
 }

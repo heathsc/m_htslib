@@ -6,3 +6,4 @@ pub use khash::khash_error::*;
 pub use kstring::kstring_error::*;
 pub use sam::cigar_error::*;
 pub use sam::sam_error::*;
+pub use sam::record::bam1::aux_error::*;

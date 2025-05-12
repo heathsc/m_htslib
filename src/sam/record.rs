@@ -1,4 +1,4 @@
-mod bam1;
+pub mod bam1;
 
 pub use bam1::*;
 

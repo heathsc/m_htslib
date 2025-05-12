@@ -1,6 +1,5 @@
 use super::*;
-
-use libc::{c_int, c_void, realloc};
+use crate::sam::{cigar, Cigar, CigarElem};
 
 impl Drop for bam1_t {
     fn drop(&mut self) {
@@ -24,30 +23,22 @@ impl bam1_t {
         Self::default()
     }
 
-    /// In common with standard rust memory allocation, we panic if memory is not available
-    /// or if allocation requested is too large
-    pub fn realloc_data(&mut self, size: usize) {
-        // Can only use this with htslib managed data
-        assert_eq!(self.mempolicy & BAM_USER_OWNS_DATA, 0);
-        let s = crate::roundup(size);
-        assert!(
-            s <= c_int::MAX as usize,
-            "Requested allocation size is too large for Bam Record"
-        );
-        let new_data = unsafe { realloc(self.data as *mut c_void, s) };
-        assert!(!new_data.is_null(), "Out of memory");
-
-        self.data = new_data as *mut c_char;
-        self.m_data = s as u32;
-        self.l_data = self.l_data.min(s as c_int);
-    }
-
-    pub fn reserve(&mut self, additional: usize) {
-        let sz = (self.l_data as usize)
-            .checked_add(additional)
-            .expect("Allocation size too high");
-        if sz > self.m_data as usize {
-            self.realloc_data(sz)
+    pub fn cigar(&self) -> Option<&Cigar> {
+        let len = self.core.n_cigar as usize;
+        if len > 0 {
+            assert!(!self.data.is_null());
+            let slice = unsafe {
+                let ptr = self.data.offset(self.core.l_qname as isize);
+                assert_eq!(
+                    ptr.align_offset(4),
+                    0,
+                    "Cigar storage not aligned - Bam record corrupt"
+                );
+                std::slice::from_raw_parts(ptr.cast::<CigarElem>(), len)
+            };
+            Some(unsafe {cigar::from_elems_unchecked(slice)} )
+        } else {
+            None
         }
     }
 }

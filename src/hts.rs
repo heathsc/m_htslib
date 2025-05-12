@@ -43,10 +43,17 @@ unsafe extern "C" {
     fn hts_readlist(fn_: *const c_char, is_file: c_int, n: *mut c_int) -> *mut *mut c_char;
     fn hts_set_log_level(level: HtsLogLevel);
     fn hts_get_log_level() -> HtsLogLevel;
+
+    static hts_nt16_table: *const u8;
 }
 
 pub fn version() -> &'static CStr {
     unsafe { CStr::from_ptr(hts_version()) }
+}
+
+#[inline]
+pub fn nt16_table() -> &'static [u8] {
+    unsafe { std::slice::from_raw_parts(hts_nt16_table, 256) }
 }
 
 pub fn features() -> u32 {
@@ -71,7 +78,7 @@ pub fn read_lines(s: &CStr) -> Result<Box<[OCStr]>, HtsError> {
     try_make_boxed_slice(p, n)
 }
 
-///  Parse comma-separated list from `s` or read list from a file (one entry per line) named `s`.  
+///  Parse comma-separated list from `s` or read list from a file (one entry per line) named `s`.
 /// The list is returned as a Boxed slice of OCStr
 pub fn read_list(s: &CStr, is_file: bool) -> Result<Box<[OCStr]>, HtsError> {
     let mut n: c_int = 0;

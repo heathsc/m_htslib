@@ -118,6 +118,17 @@ impl CigarBuf {
             Err(CigarError::CigarTooShortForTrim)
         }
     }
+    
+    pub fn parse_str(&mut self, s: &str) -> Result<(), CigarError> {
+        self.clear();
+        let mut s = s;
+        while !s.is_empty() {
+            let (elem, s_new) = CigarElem::parse(s)?;
+            s = s_new;
+            unsafe { self.push_unchecked(elem) }
+        }
+        valid_elem_slice(self)
+    }
 }
 
 impl fmt::Display for CigarBuf {
@@ -131,13 +142,7 @@ impl FromStr for CigarBuf {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut cb = Self::new();
-        let mut s = s;
-        while !s.is_empty() {
-            let (elem, s_new) = CigarElem::parse(s)?;
-            s = s_new;
-            unsafe { cb.push_unchecked(elem) }
-        }
-        valid_elem_slice(&cb).map(|_| cb)
+        cb.parse_str(s).map(|_| cb)
     }
 }
 

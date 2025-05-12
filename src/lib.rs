@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use std::ffi::CStr;
 
 pub mod bgzf;
@@ -7,8 +10,10 @@ pub mod hts;
 pub mod khash;
 pub mod kstring;
 pub mod sam;
+pub mod to_le_bytes;
 
 pub use error::*;
+pub use to_le_bytes::ToLeBytes;
 
 #[inline]
 fn from_c<'a>(c: *const libc::c_char) -> Option<&'a CStr> {

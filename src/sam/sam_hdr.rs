@@ -292,9 +292,15 @@ impl SamHdrRaw {
 
     /// Gets the target index corresponding to a sequence name (if it exists in the header)
     #[inline]
-    pub fn name2tid(&mut self, cname: &CStr) -> Option<usize> {
+    pub fn name2tid(&mut self, cname: &CStr) -> Result<usize, SamError> {
         let tid = unsafe { sam_hdr_name2tid(self, cname.as_ptr()) };
-        if tid < 0 { None } else { Some(tid as usize) }
+        if tid < -1 {
+            Err(SamError::HeaderParseFailed)
+        } else if tid < 0 {
+            Err(SamError::UnknownReference)
+        } else {
+            Ok(tid as usize)
+        }
     }
 
     /// Returns the current header txt.  Can be invalidated by a call to another header function

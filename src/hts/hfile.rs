@@ -527,10 +527,10 @@ mod tests {
     fn add_extension_to_file() {
         let mut ks = KString::new();
         add_extension(&mut ks, c"testfile.txt.gz", true, c".bz2").unwrap();
-        let s = ks.to_cstr().unwrap().to_string_lossy();
+        let s = ks.as_cstr().unwrap().to_string_lossy();
         assert_eq!(s, "testfile.txt.bz2");
         add_extension(&mut ks, c"testfile.txt", false, c".gz").unwrap();
-        let s = ks.to_cstr().unwrap().to_string_lossy();
+        let s = ks.as_cstr().unwrap().to_string_lossy();
         assert_eq!(s, "testfile.txt.gz");
     }
 

@@ -1,16 +1,20 @@
 #![allow(nonstandard_style)]
 
-mod rust_impl;
+use std::ptr::copy_nonoverlapping;
+
+mod aux;
+pub mod aux_error;
 mod c_impl;
 mod parse;
+mod rust_impl;
 
-use libc::{c_char, c_int};
+use libc::{c_char, c_int, c_void, realloc};
 
 const BAM_USER_OWNS_STRUCT: u32 = 1;
 #[allow(unused)]
 const BAM_USER_OWNS_DATA: u32 = 2;
 
-use crate::{kstring::KString, sam::SamHdrRaw, hts::HtsPos};
+use crate::{hts::HtsPos, kstring::KString, sam::SamHdrRaw};
 
 pub const BAM_FPAIRED: u16 = 1;
 pub const BAM_FPROPER_PAIR: u16 = 2;
@@ -73,5 +77,58 @@ impl Default for bam1_t {
             m_data: 0,
             mempolicy: BAM_USER_OWNS_STRUCT,
         }
+    }
+}
+
+impl bam1_t {
+    
+    /// In common with standard rust memory allocation, we panic if memory is not available
+    /// or if allocation requested is too large
+    fn realloc_data(&mut self, size: usize) {
+        // Can only use this with htslib managed data
+        assert_eq!(self.mempolicy & BAM_USER_OWNS_DATA, 0);
+        let s = crate::roundup(size);
+        assert!(
+            s <= c_int::MAX as usize,
+            "Requested allocation size is too large for Bam Record"
+        );
+        let new_data = unsafe { realloc(self.data as *mut c_void, s) };
+        assert!(!new_data.is_null(), "Out of memory");
+
+        self.data = new_data as *mut c_char;
+        self.m_data = s as u32;
+        self.l_data = self.l_data.min(s as c_int);
+    }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        let sz = (self.l_data as usize)
+            .checked_add(additional)
+            .expect("Allocation size too high");
+        if sz > self.m_data as usize {
+            self.realloc_data(sz)
+        }
+    }
+    
+    #[inline]
+    fn copy_data<T: Sized>(&mut self, src: &[T]) {
+        let sz = size_of_val(src);
+        self.reserve(sz);
+        
+        unsafe {
+            copy_nonoverlapping(
+                src.as_ptr(),
+                self.data.add(self.l_data as usize) as *mut T,
+                src.len(),
+            );
+        }
+        self.l_data += sz as i32;
+    }
+    
+    #[inline]
+    fn push_char(&mut self, b: u8) {
+        self.reserve(1);
+        unsafe { *self.data.add(self.l_data as usize) = b as c_char }
+        self.l_data += 1
     }
 }

@@ -1,4 +1,4 @@
-use std::{ffi::CStr, ptr, str::FromStr};
+use std::{ffi::CStr, fmt, ptr, str::FromStr};
 
 use crate::error::KStringError;
 use libc::{c_char, c_void, size_t};
@@ -22,6 +22,16 @@ impl PartialEq for KString {
 }
 
 impl Eq for KString {}
+
+impl fmt::Display for KString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(cs) = self.as_cstr() {
+            write!(f, "{}", cs.to_string_lossy())
+        } else {
+            Ok(())
+        }
+    }
+}
 
 /// Because this has to interact with htslib which can alloc or free the storage
 /// we need to use malloc/free from libc for all memory handling
@@ -119,7 +129,7 @@ impl KString {
         Ok(())
     }
 
-    pub fn to_cstr(&self) -> Option<&CStr> {
+    pub fn as_cstr(&self) -> Option<&CStr> {
         unsafe {
             self._as_slice(true)
                 .map(|p| CStr::from_bytes_with_nul_unchecked(p))
@@ -163,6 +173,13 @@ impl KString {
     pub fn as_slice_mut_with_null(&mut self) -> Option<&mut [u8]> {
         self._as_slice_mut(true)
     }
+
+    pub fn to_str(&self) -> Result<&str, KStringError> {
+        match self.as_slice() {
+            Some(s) => std::str::from_utf8(s).map_err(KStringError::Utf8Error),
+            None => Ok(""),
+        }
+    }
 }
 
 impl FromStr for KString {
@@ -196,5 +213,9 @@ mod tests {
         let mut ks = KString::new();
         ks.putsn(s).unwrap();
         assert_eq!(ks.len(), 11);
+
+        ks.putsn(", and goodbye".as_bytes()).unwrap();
+        assert_eq!(ks.len(), 24);
+        assert_eq!(ks.as_cstr().unwrap(), c"Hello World, and goodbye");
     }
 }

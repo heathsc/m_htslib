@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{BgzfError, CigarError, CramError, KHashError, KStringError, SamError};
+use crate::{AuxError, BgzfError, CigarError, CramError, KHashError, KStringError, SamError};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum HtsError {
@@ -38,6 +38,8 @@ pub enum HtsError {
     OutOfMemory,
     #[error("No stats information available")]
     StatsUnavailable,
+    #[error("Aux Error: {0}")]
+    AuxError(#[from] AuxError),
     #[error("Sam Error: {0}")]
     SamError(#[from] SamError),
     #[error("Bgzf Error: {0}")]
