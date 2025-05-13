@@ -1,0 +1,39 @@
+use std::{num::{ParseFloatError, ParseIntError}, str::Utf8Error};
+
+use thiserror::Error;
+
+#[derive(Error, Debug, Eq, PartialEq)]
+pub enum AuxError {
+    #[error("Aux tag too short (incomplete)")]
+    ShortTag,
+    #[error("Bad aux tag format")]
+    BadFormat,
+    #[error("Bad A (single character) aux tag format")]
+    BadAFormat,
+    #[error("Illegal zero length aux tag")]
+    ZeroLengthTag,
+    #[error("Utf8 Error: {0}")]
+    Utf8Error(#[from] Utf8Error),
+    #[error("Parse Int Error: {0}")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("Parse Float Error: {0}")]
+    ParseFloatError(#[from] ParseFloatError),
+    #[error("Aux tag integer out of range")]
+    IntegerOutOfRange,
+    #[error("Hex digits does not have an even number of digits")]
+    OddHexDigits,
+    #[error("Illegal characters in Z aux tag")]
+    IllegalZCharacters,
+    #[error("Non hex digits in H aux tag")]
+    IllegalHCharacters,
+    #[error("Unknown aux tag type '{0}'")]
+    UnknownType(char),
+    #[error("Unknown aux array type '{0}'")]
+    UnknownArrayType(char),
+    #[error("Integer overflow")]
+    IntegerOverflow((i64, i64)),
+    #[error("Integer size too small")]
+    IntegerTooSmall(u8),
+    #[error("Parse Float Error")]
+    FloatError,
+}
