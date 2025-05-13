@@ -1,9 +1,9 @@
 use libc::{c_char, c_int};
 
-use super::{BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t, super::BamRec};
+use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
 use crate::{
     SamError,
-    hts::{HtsPos, nt16_table},
+    hts::{HtsPos, SEQ_NT16_TABLE},
     kstring::KString,
     sam::{SamHdrRaw, cigar_buf::CigarBuf},
 };
@@ -40,7 +40,7 @@ impl BamRec {
     }
 
     const ZEROS: [i8; 4] = [0, 0, 0, 0];
-    
+
     fn parse_qname(&mut self, s: &[u8]) -> Result<(), SamError> {
         let l = s.len();
         if l == 0 {
@@ -52,6 +52,7 @@ impl BamRec {
             let l1 = (4 - ((l + 1) & 3)) & 3;
             self.inner.copy_data(&Self::ZEROS[..=l1]);
             self.inner.core.l_extranul = l1 as u8;
+            self.inner.core.l_qname = self.inner.l_data as u16;
             Ok(())
         }
     }
@@ -104,6 +105,7 @@ impl BamRec {
                 cb.parse_str(s)?;
                 let elems = cb.as_elems();
                 let n_elem = elems.len();
+
                 if n_elem > u32::MAX as usize {
                     return Err(SamError::TooManyCigarElem);
                 }
@@ -115,8 +117,12 @@ impl BamRec {
             } else {
                 cb.reference_len().max(1)
             };
-            self.inner.core.bin =
-                reg2bin(self.inner.core.pos, self.inner.core.pos + cig_ref_len as HtsPos, 14, 5) as u16;
+            self.inner.core.bin = reg2bin(
+                self.inner.core.pos,
+                self.inner.core.pos + cig_ref_len as HtsPos,
+                14,
+                5,
+            ) as u16;
 
             Ok(())
         }
@@ -142,48 +148,50 @@ impl BamRec {
 
             self.inner.core.l_qseq = l as i32;
             // Reserve data for sequence
-            let nb = (l + 1) >> 2;
+            let nb = (l + 1) >> 1;
             self.inner.reserve(nb);
 
             // Convert reserve space to &mut[c_char] so that we can work with it safely
-            let seq =
-                unsafe { std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), nb) };
+            let seq = unsafe {
+                std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), nb)
+            };
 
             self.inner.l_data += nb as i32;
 
-            // Get hts_nt16_table
-            let nt16 = nt16_table();
+            // Get seq_nt16_table
             let iter = s.chunks_exact(2);
             let r = iter.remainder();
-            
+
             // Pack sequence into nybbles
             for (s1, p) in iter.zip(seq.iter_mut()) {
-                *p = ((nt16[s1[0] as usize] << 4) | nt16[s1[1] as usize]) as c_char
+                *p = ((SEQ_NT16_TABLE[s1[0] as usize] << 4) | SEQ_NT16_TABLE[s1[1] as usize])
+                    as c_char
             }
-            
+
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                *seq.last_mut().unwrap() = (nt16[*c as usize] << 4) as c_char
+                *seq.last_mut().unwrap() = (SEQ_NT16_TABLE[*c as usize] << 4) as c_char
             }
         }
         Ok(())
     }
-    
+
     fn parse_qual(&mut self, s: &[u8]) -> Result<(), SamError> {
         let l = self.inner.core.l_qseq as usize;
         self.inner.reserve(l);
-        
+
         // Convert reserve space to &mut[c_char] so that we can work with it safely
-        let qual =
-            unsafe { std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), l) };
-        
+        let qual = unsafe {
+            std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), l)
+        };
+
         self.inner.l_data += l as i32;
-        
+
         if s == b"*" {
             qual.fill(-1)
         } else {
             if s.len() != l {
-                return Err(SamError::SeqQualMismatch)
+                return Err(SamError::SeqQualMismatch);
             }
             for (sq, q) in s.iter().zip(qual.iter_mut()) {
                 *q = (*sq - 33) as c_char

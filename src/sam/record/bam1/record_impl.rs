@@ -8,6 +8,8 @@ use crate::{
 
 use libc::c_int;
 
+use super::{BAM_FMUNMAP, BAM_FUNMAP};
+
 impl BamRec {
     #[inline]
     pub fn new() -> Self {
@@ -64,6 +66,38 @@ impl BamRec {
     #[inline]
     pub fn set_query_name(&mut self, qname: &CStr) -> Result<(), SamError> {
         self.inner.set_query_name(qname)
+    }
+    
+    #[inline]
+    pub fn qual(&self) -> u8 {
+        self.inner.core.qual
+    }
+
+    #[inline]
+    pub fn flag(&self) -> u16 {
+        self.inner.core.flag
+    }
+    
+    pub fn pos(&self) -> Option<HtsPos> {
+        let x = self.inner.core.pos;
+        if x >= 0 && (self.inner.core.flag & BAM_FUNMAP) == 0 {
+            Some(x)
+        } else {
+            None
+        }
+    }
+    
+    pub fn mpos(&self) -> Option<HtsPos> {
+        let x = self.inner.core.mpos;
+        if x >= 0 && (self.inner.core.flag & BAM_FMUNMAP) == 0 {
+            Some(x)
+        } else {
+            None
+        }
+    }
+    
+    pub fn template_len(&self) -> HtsPos {
+        self.inner.core.isze
     }
 }
 

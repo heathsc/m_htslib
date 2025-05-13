@@ -1,4 +1,10 @@
-use std::{ffi::CStr, fmt, ptr, str::FromStr};
+use std::{
+    ffi::CStr,
+    fmt,
+    io::{self, Write},
+    ptr,
+    str::FromStr,
+};
 
 use crate::error::KStringError;
 use libc::{c_char, c_void, size_t};
@@ -55,6 +61,23 @@ impl Drop for KString {
 
 unsafe impl Send for KString {}
 unsafe impl Sync for KString {}
+
+impl Write for KString {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.putsn(buf).map_err(io::Error::other).map(|_| buf.len())
+    }
+
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.putsn(buf).map_err(io::Error::other)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 impl KString {
     pub fn new() -> Self {
@@ -196,6 +219,8 @@ impl FromStr for KString {
 mod tests {
     use super::*;
 
+    use std::io::Write;
+
     #[test]
     fn construction() {
         let mut ks = KString::new();
@@ -217,5 +242,13 @@ mod tests {
         ks.putsn(", and goodbye".as_bytes()).unwrap();
         assert_eq!(ks.len(), 24);
         assert_eq!(ks.as_cstr().unwrap(), c"Hello World, and goodbye");
+    }
+
+    #[test]
+    fn using_write() {
+        let mut ks = KString::new();
+        let x = 42;
+        write!(ks, "Hello World. The number is {x}").unwrap();
+        assert_eq!(ks.as_cstr().unwrap(), c"Hello World. The number is 42");
     }
 }
