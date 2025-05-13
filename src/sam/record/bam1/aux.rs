@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
-use super::{aux_error::AuxError, bam1_t};
+use super::{aux_error::AuxError, super::BamRec};
 use crate::ToLeBytes;
-
+/* 
 /// Auxillary SAM tags
 ///
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -37,7 +37,8 @@ fn array_type2size(c: u8) -> Result<usize, AuxError> {
     }
 }
 
-impl bam1_t {
+*/
+impl BamRec {
     pub(super) fn parse_aux_tag(&mut self, s: &[u8]) -> Result<(), AuxError> {
         if s.len() < 5 {
             Err(AuxError::ShortTag)
@@ -47,14 +48,13 @@ impl bam1_t {
             Err(AuxError::BadFormat)
         } else {
             // Copy 2 letter tag ID
-            self.copy_data(&s[..2]);
+            self.inner.copy_data(&s[..2]);
             // Parse rest of tag
             self.parse_tag_body(&s[3..])
         }
     }
 
     fn parse_tag_body(&mut self, s: &[u8]) -> Result<(), AuxError> {
-        let l = s.len();
         match s[0] {
             // Single character
             b'A' | b'a' | b'C' | b'c' => self.parse_a_tag(&s[2..])?,
@@ -79,28 +79,27 @@ impl bam1_t {
         if s.len() > 1 && s[1] != b',' {
             Err(AuxError::BadFormat)
         } else {
-            let size = array_type2size(s[0])?;
-            let off = self.l_data;
-            self.reserve(6);
+            let off = self.inner.l_data;
+            self.inner.reserve(6);
 
             // We will fill in the types and actual array count later
-            self.l_data += 6;
+            self.inner.l_data += 6;
 
             let (n_elem, tp) = match self.read_array(&s[2..], s[0]) {
                 Ok(n) => (n, s[0]),
                 Err(AuxError::IntegerTooSmall(new_type)) => {
                     // Retry with new type. This should not fail (but if it does we will return with an error)
-                    self.l_data = off + 6;
+                    self.inner.l_data = off + 6;
                     (self.read_array(&s[2..], new_type)?, new_type)
                 }
                 Err(e) => return Err(e),
             };
 
-            let last = self.l_data;
-            self.l_data = off;
-            self.push_char(b'B');
+            let last = self.inner.l_data;
+            self.inner.l_data = off;
+            self.inner.push_char(b'B');
             self.copy_num(tp, n_elem as u32);
-            self.l_data = last;
+            self.inner.l_data = last;
             Ok(())
         }
     }
@@ -144,7 +143,7 @@ impl bam1_t {
                 Ok(j) => {
                     if !overflow {
                         let j: T = j;
-                        self.copy_data(j.to_le().as_ref());
+                        self.inner.copy_data(j.to_le().as_ref());
                         n_elem += 1;
                     }
                 }
@@ -166,7 +165,7 @@ impl bam1_t {
                 .parse::<T>()
                 .map_err(|_| AuxError::FloatError)?;
 
-            self.copy_data(i.to_le().as_ref());
+            self.inner.copy_data(i.to_le().as_ref());
             n_elem += 1;
         }
         Ok(n_elem)
@@ -176,7 +175,7 @@ impl bam1_t {
         if s.len() != 1 || !s[0].is_ascii_graphic() {
             Err(AuxError::BadAFormat)
         } else {
-            self.copy_data(&[b'A', s[0]]);
+            self.inner.copy_data(&[b'A', s[0]]);
             Ok(())
         }
     }
@@ -202,11 +201,11 @@ impl bam1_t {
     }
 
     fn push_z_h_tag(&mut self, c: u8, s: &[u8]) {
-        self.push_char(c);
+        self.inner.push_char(c);
         if !s.is_empty() {
-            self.copy_data(s);
+            self.inner.copy_data(s);
         }
-        self.push_char(0);
+        self.inner.push_char(0);
     }
 
     fn parse_integer(&mut self, s: &[u8]) -> Result<(), AuxError> {
@@ -215,8 +214,8 @@ impl bam1_t {
             i if i < i32::MIN as i64 => return Err(AuxError::IntegerOutOfRange),
             i if i < i16::MIN as i64 => self.copy_num(b'i', i as i32),
             i if i < i8::MIN as i64 => self.copy_num(b's', i as i16),
-            i if i < 0 => self.copy_data(&[b'c' as i8, i as i8]),
-            i if i <= u8::MAX as i64 => self.copy_data(&[b'C', i as u8]),
+            i if i < 0 => self.inner.copy_data(&[b'c' as i8, i as i8]),
+            i if i <= u8::MAX as i64 => self.inner.copy_data(&[b'C', i as u8]),
             i if i <= u16::MAX as i64 => self.copy_num(b'S', i as u16),
             i if i <= u32::MAX as i64 => self.copy_num(b'I', i as u32),
             _ => return Err(AuxError::IntegerOutOfRange),
@@ -225,8 +224,8 @@ impl bam1_t {
     }
 
     fn copy_num<T: ToLeBytes>(&mut self, c: u8, x: T) {
-        self.push_char(c);
-        self.copy_data(x.to_le().as_ref());
+        self.inner.push_char(c);
+        self.inner.copy_data(x.to_le().as_ref());
     }
 }
 

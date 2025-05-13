@@ -1,6 +1,9 @@
 pub mod bam1;
 
-pub use bam1::*;
+use bam1::*;
 
-pub type BamRec = bam1_t;
+#[derive(Clone, Default, Debug)]
+pub struct BamRec {
+    inner: bam1_t,
+}
 

@@ -1,11 +1,10 @@
 #![allow(nonstandard_style)]
 
-use std::ptr::copy_nonoverlapping;
-
+use std::{ffi::CStr, ptr::copy_nonoverlapping};
 mod aux;
 pub mod aux_error;
-mod c_impl;
 mod parse;
+mod record_impl;
 mod rust_impl;
 
 use libc::{c_char, c_int, c_void, realloc};
@@ -14,7 +13,7 @@ const BAM_USER_OWNS_STRUCT: u32 = 1;
 #[allow(unused)]
 const BAM_USER_OWNS_DATA: u32 = 2;
 
-use crate::{hts::HtsPos, kstring::KString, sam::SamHdrRaw};
+use crate::{hts::HtsPos, SamError};
 
 pub const BAM_FPAIRED: u16 = 1;
 pub const BAM_FPROPER_PAIR: u16 = 2;
@@ -34,14 +33,13 @@ pub const SAM_FORMAT_VERSION: &str = "1.6";
 #[link(name = "hts")]
 unsafe extern "C" {
     fn bam_destroy1(b: *mut bam1_t);
-    fn bam_copy1(bdest: *mut bam1_t, bsrc: *const bam1_t) -> *mut bam1_t;
+    fn bam_copy1<'a>(bdest: *mut bam1_t, bsrc: *const bam1_t) -> *mut bam1_t;
     fn bam_endpos(pt_: *const bam1_t) -> HtsPos;
     fn bam_set_qname(pt_: *mut bam1_t, qname: *const c_char) -> c_int;
-    fn sam_parse1(kstring: *mut KString, sam_hdr: *mut SamHdrRaw, b: *mut bam1_t) -> c_int;
 }
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct bam1_core_t {
     pos: HtsPos,
     tid: i32,
@@ -58,7 +56,8 @@ struct bam1_core_t {
 }
 
 #[repr(C)]
-pub struct bam1_t {
+#[derive(Debug)]
+pub(super) struct bam1_t {
     core: bam1_core_t,
     id: u64,
     data: *mut c_char,
@@ -81,7 +80,6 @@ impl Default for bam1_t {
 }
 
 impl bam1_t {
-    
     /// In common with standard rust memory allocation, we panic if memory is not available
     /// or if allocation requested is too large
     fn realloc_data(&mut self, size: usize) {
@@ -109,12 +107,12 @@ impl bam1_t {
             self.realloc_data(sz)
         }
     }
-    
+
     #[inline]
     fn copy_data<T: Sized>(&mut self, src: &[T]) {
         let sz = size_of_val(src);
         self.reserve(sz);
-        
+
         unsafe {
             copy_nonoverlapping(
                 src.as_ptr(),
@@ -124,11 +122,28 @@ impl bam1_t {
         }
         self.l_data += sz as i32;
     }
-    
+
     #[inline]
     fn push_char(&mut self, b: u8) {
         self.reserve(1);
         unsafe { *self.data.add(self.l_data as usize) = b as c_char }
         self.l_data += 1
+    }
+
+    fn copy(&self, dst: &mut Self) {
+        if unsafe { bam_copy1(dst, self) }.is_null() {
+            panic!("Out of memory copying Bam record")
+        }
+    }
+
+    fn end_pos(&self) -> HtsPos {
+        unsafe { bam_endpos(self) }
+    }
+    
+    fn set_query_name(&mut self, qname: &CStr) -> Result<(), SamError> {
+        match unsafe { bam_set_qname(self, qname.as_ptr()) } {
+            0 => Ok(()),
+            _ => Err(SamError::SetQnameFailed),
+        }
     }
 }

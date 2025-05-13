@@ -1,8 +1,6 @@
-
-
 use libc::{c_char, c_int};
 
-use super::{BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t, bam1_t};
+use super::{BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t, super::BamRec};
 use crate::{
     SamError,
     hts::{HtsPos, nt16_table},
@@ -10,7 +8,7 @@ use crate::{
     sam::{SamHdrRaw, cigar_buf::CigarBuf},
 };
 
-impl bam1_t {
+impl BamRec {
     pub fn parse(
         &mut self,
         p: &[u8],
@@ -18,20 +16,20 @@ impl bam1_t {
         ks: &mut KString,
         cb: &mut CigarBuf,
     ) -> Result<(), SamError> {
-        self.l_data = 0;
-        self.core = bam1_core_t::default();
+        self.inner.l_data = 0;
+        self.inner.core = bam1_core_t::default();
 
         for (ix, s) in p.split(|c| *c == b'\t').enumerate() {
             match ix {
                 0 => self.parse_qname(s)?,
-                1 => self.core.flag = parse_sam_flag(s)?,
-                2 => self.core.tid = parse_contig(s, hdr, ks)?,
+                1 => self.inner.core.flag = parse_sam_flag(s)?,
+                2 => self.inner.core.tid = parse_contig(s, hdr, ks)?,
                 3 => self.parse_pos(s)?,
-                4 => self.core.qual = bytes_to_uint(s, 0xff).map(|x| x as u8)?,
+                4 => self.inner.core.qual = bytes_to_uint(s, 0xff).map(|x| x as u8)?,
                 5 => self.parse_cigar(s, cb)?,
                 6 => self.parse_mate_contig(s, hdr, ks)?,
                 7 => self.parse_mpos(s)?,
-                8 => self.core.isze = std::str::from_utf8(s)?.parse::<HtsPos>()?,
+                8 => self.inner.core.isze = std::str::from_utf8(s)?.parse::<HtsPos>()?,
                 9 => self.parse_seq(s)?,
                 10 => self.parse_qual(s)?,
                 _ => self.parse_aux_tag(s)?,
@@ -50,30 +48,30 @@ impl bam1_t {
         } else if l > 254 {
             Err(SamError::QueryTooLong)
         } else {
-            self.copy_data(s);
+            self.inner.copy_data(s);
             let l1 = (4 - ((l + 1) & 3)) & 3;
-            self.copy_data(&Self::ZEROS[..=l1]);
-            self.core.l_extranul = l1 as u8;
+            self.inner.copy_data(&Self::ZEROS[..=l1]);
+            self.inner.core.l_extranul = l1 as u8;
             Ok(())
         }
     }
 
     fn parse_pos(&mut self, s: &[u8]) -> Result<(), SamError> {
-        let (pos, tid) = bytes_to_htspos(s, self.core.tid)?;
-        self.core.tid = tid;
-        self.core.pos = pos;
-        if self.core.tid < 0 {
-            self.core.flag |= BAM_FUNMAP
+        let (pos, tid) = bytes_to_htspos(s, self.inner.core.tid)?;
+        self.inner.core.tid = tid;
+        self.inner.core.pos = pos;
+        if self.inner.core.tid < 0 {
+            self.inner.core.flag |= BAM_FUNMAP
         }
         Ok(())
     }
 
     fn parse_mpos(&mut self, s: &[u8]) -> Result<(), SamError> {
-        let (pos, tid) = bytes_to_htspos(s, self.core.mtid)?;
-        self.core.mtid = tid;
-        self.core.mpos = pos;
-        if self.core.mtid < 0 {
-            self.core.flag |= BAM_FMUNMAP
+        let (pos, tid) = bytes_to_htspos(s, self.inner.core.mtid)?;
+        self.inner.core.mtid = tid;
+        self.inner.core.mpos = pos;
+        if self.inner.core.mtid < 0 {
+            self.inner.core.flag |= BAM_FMUNMAP
         }
         Ok(())
     }
@@ -84,8 +82,8 @@ impl bam1_t {
         hdr: &mut SamHdrRaw,
         ks: &mut KString,
     ) -> Result<(), SamError> {
-        self.core.mtid = if s == b"=" {
-            self.core.tid
+        self.inner.core.mtid = if s == b"=" {
+            self.inner.core.tid
         } else {
             parse_contig(s, hdr, ks)?
         };
@@ -97,9 +95,9 @@ impl bam1_t {
             Err(SamError::EmptyCigarField)
         } else {
             if s[0] == b'*' {
-                if self.core.flag & BAM_FUNMAP == 0 {
+                if self.inner.core.flag & BAM_FUNMAP == 0 {
                     warn!("Mapped query should have Cigar; treated as unmapped");
-                    self.core.flag |= BAM_FUNMAP;
+                    self.inner.core.flag |= BAM_FUNMAP;
                 }
             } else {
                 let s = std::str::from_utf8(s)?;
@@ -109,16 +107,16 @@ impl bam1_t {
                 if n_elem > u32::MAX as usize {
                     return Err(SamError::TooManyCigarElem);
                 }
-                self.copy_data(elems);
-                self.core.n_cigar = n_elem as u32;
+                self.inner.copy_data(elems);
+                self.inner.core.n_cigar = n_elem as u32;
             }
-            let cig_ref_len = if self.core.flag & BAM_FUNMAP == 0 {
+            let cig_ref_len = if self.inner.core.flag & BAM_FUNMAP == 0 {
                 1
             } else {
                 cb.reference_len().max(1)
             };
-            self.core.bin =
-                reg2bin(self.core.pos, self.core.pos + cig_ref_len as HtsPos, 14, 5) as u16;
+            self.inner.core.bin =
+                reg2bin(self.inner.core.pos, self.inner.core.pos + cig_ref_len as HtsPos, 14, 5) as u16;
 
             Ok(())
         }
@@ -127,7 +125,7 @@ impl bam1_t {
     fn parse_seq(&mut self, s: &[u8]) -> Result<(), SamError> {
         if s == b"*" {
             // Empty sequence
-            self.core.l_qseq = 0
+            self.inner.core.l_qseq = 0
         } else {
             // Parse sequence
             let l = s.len();
@@ -142,16 +140,16 @@ impl bam1_t {
                 }
             }
 
-            self.core.l_qseq = l as i32;
+            self.inner.core.l_qseq = l as i32;
             // Reserve data for sequence
             let nb = (l + 1) >> 2;
-            self.reserve(nb);
+            self.inner.reserve(nb);
 
             // Convert reserve space to &mut[c_char] so that we can work with it safely
             let seq =
-                unsafe { std::slice::from_raw_parts_mut(self.data.add(self.l_data as usize), nb) };
+                unsafe { std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), nb) };
 
-            self.l_data += nb as i32;
+            self.inner.l_data += nb as i32;
 
             // Get hts_nt16_table
             let nt16 = nt16_table();
@@ -172,14 +170,14 @@ impl bam1_t {
     }
     
     fn parse_qual(&mut self, s: &[u8]) -> Result<(), SamError> {
-        let l = self.core.l_qseq as usize;
-        self.reserve(l);
+        let l = self.inner.core.l_qseq as usize;
+        self.inner.reserve(l);
         
         // Convert reserve space to &mut[c_char] so that we can work with it safely
         let qual =
-            unsafe { std::slice::from_raw_parts_mut(self.data.add(self.l_data as usize), l) };
+            unsafe { std::slice::from_raw_parts_mut(self.inner.data.add(self.inner.l_data as usize), l) };
         
-        self.l_data += l as i32;
+        self.inner.l_data += l as i32;
         
         if s == b"*" {
             qual.fill(-1)
