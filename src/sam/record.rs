@@ -71,11 +71,17 @@ mod tests {
         let s: String = b.seq().rcomplement().map(|c| c.as_char()).collect();
         assert_eq!(&s, "GCGTATTGCAG");
         
+        let s: String = b.seq().rcomplement().skip(1).step_by(2).map(|c| c.as_char()).collect();
+        assert_eq!(&s, "CTTGA");
+        
         let q: Vec<_> = b.qual().collect();
         assert_eq!(&q, &[32, 32, 37, 41, 37, 37, 33, 34, 32, 37, 37]);
         
         let q: Vec<_> = b.qual().rev().collect();
         assert_eq!(&q, &[37, 37, 32, 34, 33, 37, 37, 41, 37, 32, 32]);
+        
+        let q: Vec<_> = b.qual().rev().skip(1).step_by(3).collect();
+        assert_eq!(&q, &[37, 33, 41, 32]);
         
         let mut s = String::new();
         for sq in b.seq_qual() {
