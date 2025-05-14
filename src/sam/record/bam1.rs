@@ -6,7 +6,6 @@ pub mod aux_error;
 mod parse;
 mod record_impl;
 mod rust_impl;
-mod seq_iter;
 
 use libc::{c_char, c_int, c_void, realloc};
 

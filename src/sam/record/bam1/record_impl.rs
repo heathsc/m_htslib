@@ -3,12 +3,12 @@ use std::ffi::CStr;
 use crate::{
     SamError,
     hts::HtsPos,
-    sam::{BamRec, Cigar, CigarElem, cigar},
+    sam::{BamRec, Cigar, CigarElem, SeqIter, QualIter, SeqQualIter, cigar},
 };
 
 use libc::c_int;
 
-use super::{BAM_FMUNMAP, BAM_FUNMAP, seq_iter::SeqIter};
+use super::{BAM_FMUNMAP, BAM_FUNMAP};
 
 impl BamRec {
     #[inline]
@@ -69,7 +69,7 @@ impl BamRec {
     }
 
     #[inline]
-    pub fn qual(&self) -> u8 {
+    pub fn mapq(&self) -> u8 {
         self.inner.core.qual
     }
 
@@ -116,11 +116,40 @@ impl BamRec {
             }
         }
     }
-    
+
+    pub fn qual_slice(&self) -> &[u8] {
+        let b = &self.inner;
+        let core = &b.core;
+        if b.data.is_null() || core.l_qseq == 0 {
+            &[]
+        } else {
+            let core = &b.core;
+            let off = ((core.n_cigar as usize) << 2)
+                + core.l_qname as usize
+                + ((core.l_qseq + 1) >> 1) as usize;
+            unsafe {
+                std::slice::from_raw_parts(
+                    b.data.add(off) as *const u8,
+                    core.l_qseq as usize,
+                )
+            }
+        }
+    }
+
+    #[inline]
     pub fn seq(&self) -> SeqIter {
         SeqIter::new(self.seq_slice(), self.inner.core.l_qseq as usize)
     }
     
+    #[inline]
+    pub fn qual(&self) -> QualIter {
+        QualIter::new(self.qual_slice())
+    }
+    
+    #[inline]
+    pub fn seq_qual(&self) -> SeqQualIter {
+        SeqQualIter::new(self.seq_slice(), self.qual_slice())
+    }
 }
 
 #[inline]

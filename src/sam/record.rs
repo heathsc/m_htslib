@@ -11,7 +11,7 @@ mod tests {
     #[allow(unused)]
     use super::*;
     #[allow(unused)]
-    use crate::{hts::HtsFile, kstring::KString, sam::CigarBuf, sam::SamHdr};
+    use crate::{hts::HtsFile, kstring::KString, sam::{CigarBuf, SamHdr, SequenceIter}};
     #[allow(unused)]
     use std::io::Write;
 
@@ -48,6 +48,63 @@ mod tests {
         write!(v, "{}", itr.next().unwrap()).unwrap();
 
         assert_eq!(std::str::from_utf8(&v).unwrap(), "CGCATC");
-        assert_eq!(itr.next(), None)
+        assert_eq!(itr.next(), None);
+
+        let mut itr = b.seq();
+        let mut v: Vec<u8> = Vec::with_capacity(5);
+
+        write!(v, "{}", itr.next().unwrap()).unwrap();
+        write!(v, "{}", itr.next().unwrap()).unwrap();
+        write!(v, "{}", itr.next().unwrap()).unwrap();
+        write!(v, "{}", itr.next_back().unwrap()).unwrap();
+        write!(v, "{}", itr.next_back().unwrap()).unwrap();
+        write!(v, "{}", itr.next().unwrap()).unwrap();
+        
+        assert_eq!(std::str::from_utf8(&v).unwrap(), "CTGCGC");
+        
+        let s: String = b.seq().map(|c| c.as_char()).collect();
+        assert_eq!(&s, "CTGCAATACGC");
+        
+        let s: String = b.seq().rev().complement().map(|c| c.as_char()).collect();
+        assert_eq!(&s, "GCGTATTGCAG");
+        
+        let s: String = b.seq().rcomplement().map(|c| c.as_char()).collect();
+        assert_eq!(&s, "GCGTATTGCAG");
+        
+        let q: Vec<_> = b.qual().collect();
+        assert_eq!(&q, &[32, 32, 37, 41, 37, 37, 33, 34, 32, 37, 37]);
+        
+        let q: Vec<_> = b.qual().rev().collect();
+        assert_eq!(&q, &[37, 37, 32, 34, 33, 37, 37, 41, 37, 32, 32]);
+        
+        let mut s = String::new();
+        for sq in b.seq_qual() {
+            s.push_str(format!("{}:{} ", sq.base(), sq.qual()).as_str())
+        }
+        assert_eq!(&s, "C:32 T:32 G:37 C:41 A:37 A:37 T:33 A:34 C:32 G:37 C:37 ");
+        
+        s.clear();
+        for sq in b.seq_qual().rcomplement() {
+            s.push_str(format!("{}:{} ", sq.base(), sq.qual()).as_str())
+        }  
+        assert_eq!(&s, "G:37 C:37 G:32 T:34 A:33 T:37 T:37 G:41 C:37 A:32 G:32 ");
+        
+        s.clear();
+        for sq in b.seq_qual().skip(1).step_by(3) {
+            s.push_str(format!("{}:{} ", sq.base(), sq.qual()).as_str())
+        }
+        assert_eq!(&s, "T:32 A:37 A:34 C:37 ");
+        
+        s.clear();
+        for sq in b.seq_qual().rcomplement().skip(1).step_by(3) {
+            s.push_str(format!("{}:{} ", sq.base(), sq.qual()).as_str())
+        }
+        assert_eq!(&s, "C:37 A:33 G:41 G:32 ");
+        
+        s.clear();
+        for sq in b.seq_qual().rcomplement().skip(1).step_by(2) {
+            s.push_str(format!("{}:{} ", sq.base(), sq.qual()).as_str())
+        }
+        assert_eq!(&s, "C:37 T:34 T:37 G:41 A:32 ");        
     }
 }
