@@ -3,7 +3,8 @@ use libc::{c_char, c_int};
 use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
 use crate::{
     SamError,
-    hts::{HtsPos, SEQ_NT16_TABLE},
+    base::Base,
+    hts::HtsPos,
     kstring::KString,
     sam::{SamHdrRaw, cigar_buf::CigarBuf},
 };
@@ -164,13 +165,12 @@ impl BamRec {
 
             // Pack sequence into nybbles
             for (s1, p) in iter.zip(seq.iter_mut()) {
-                *p = ((SEQ_NT16_TABLE[s1[0] as usize] << 4) | SEQ_NT16_TABLE[s1[1] as usize])
-                    as c_char
+                *p = Base::from_u8(s1[0]).combine(&Base::from_u8(s1[1])) as c_char;
             }
 
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                *seq.last_mut().unwrap() = (SEQ_NT16_TABLE[*c as usize] << 4) as c_char
+                *seq.last_mut().unwrap() = (Base::from_u8(*c).as_n() << 4) as c_char
             }
         }
         Ok(())

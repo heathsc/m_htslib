@@ -11,6 +11,7 @@ pub mod khash;
 pub mod kstring;
 pub mod sam;
 pub mod to_le_bytes;
+pub mod base;
 
 pub use error::*;
 pub use to_le_bytes::ToLeBytes;
