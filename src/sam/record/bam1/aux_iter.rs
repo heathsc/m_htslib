@@ -461,7 +461,38 @@ mod tests {
         } else {
             panic!("Wrong tag type")
         }
+        Ok(())
+    }
+    
+    #[test]
+    fn test_get_tag() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
 
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(
+            &mut b,
+            &mut hdr,
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:i:4\txb:Z:Hi\txc:A:v\txd:B:c,4,8",
+        )?;
+        
+        let tag = b.get_tag("xc")?.expect("Did not find xc tag");
+        
+        assert_eq!(tag.id()?, "xc");
+        let ret = tag.get_type()?;
+        assert_eq!(ret, (BamAuxTagType::Char, None));
+        
+        let x = tag.get_val()?;
+        if let BamAuxVal::Char(s) = x {
+            assert_eq!(s, b'v');
+        } else {
+            panic!("Wrong tag type")
+        }
+        
+        // RG tag does not exist in this record
+        assert!(b.get_tag("RG")?.is_none());
+        
         Ok(())
     }
 }

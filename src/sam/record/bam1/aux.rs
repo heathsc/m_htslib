@@ -1,6 +1,6 @@
 use std::{collections::HashSet, str::FromStr};
 
-use super::{aux_error::AuxError, super::BamRec};
+use super::{aux_error::AuxError, aux_iter::BamAuxTag, super::BamRec};
 use crate::{LeBytes, sam::BamAuxIter};
 
 impl BamRec {
@@ -20,6 +20,16 @@ impl BamRec {
     #[inline]
     pub fn aux_tags(&self) -> BamAuxIter {
         BamAuxIter::new(self.get_aux_slice())
+    }
+    
+    pub fn get_tag<'a>(&'a self, tag_id: &str) -> Result<Option<BamAuxTag<'a>>, AuxError> {
+        for t in self.aux_tags() {
+            let tag = t?;
+            if tag.id()? == tag_id {
+                return Ok(Some(tag))
+            }
+        }
+        Ok(None)
     }
     
     pub(super) fn parse_aux_tag(&mut self, s: &[u8], hash: &mut HashSet<[u8; 2]>) -> Result<(), AuxError> {

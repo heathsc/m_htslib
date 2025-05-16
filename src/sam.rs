@@ -8,7 +8,7 @@ pub mod seq_iter;
 mod cigar_validate;
 pub mod sam_error;
 
-pub use record::bam1::bam_aux_iter::*;
+pub use record::bam1::aux_iter::*;
 pub use cigar::*;
 pub use cigar_buf::*;
 pub use sam_hdr::*;
