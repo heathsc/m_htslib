@@ -1,6 +1,7 @@
 pub mod bam1;
 
 use bam1::*;
+pub use bam1::parse::SamParser;
 
 #[derive(Clone, Default, Debug)]
 pub struct BamRec {
@@ -8,17 +9,16 @@ pub struct BamRec {
 }
 
 mod tests {
-    #[allow(unused)]
+    #![allow(unused)]
+
     use super::*;
-    #[allow(unused)]
-    use crate::sam::BamAuxVal;
-    #[allow(unused)]
+
     use crate::{
         hts::HtsFile,
         kstring::KString,
-        sam::{CigarBuf, SamHdr, SequenceIter},
+        sam::{BamAuxVal, CigarBuf, SamHdr, SamParser, SequenceIter},
     };
-    #[allow(unused)]
+
     use std::io::Write;
 
     #[test]
@@ -27,11 +27,9 @@ mod tests {
             HtsFile::open(c"test/realn01.sam", c"r").expect("Failed to read test/realn01.sam");
         let mut hdr = SamHdr::read(&mut h).expect("Failed to read header");
 
-        let mut ks = KString::new();
+        let mut p = SamParser::new();
         let mut b = BamRec::new();
-        let mut cb = CigarBuf::new();
-
-        b.parse(b"read_id1\t147\t0000000F\t412\t49\t11M\t=\t193\t-380\tCTGCAATACGC\tAAFJFFBCAFF\tNM:i:0\tRG:Z:rg\txs:B:s,-32,400,21\txt:Z:what ever", &mut hdr, &mut ks, &mut cb).expect("Error parsing SAM record");
+        p.parse(&mut b, &mut hdr, b"read_id1\t147\t0000000F\t412\t49\t11M\t=\t193\t-380\tCTGCAATACGC\tAAFJFFBCAFF\tNM:i:0\tRG:Z:rg\txs:B:s,-32,400,21\txt:Z:what ever").expect("Error parsing SAM record");
 
         let mut itr = b.seq();
         let mut v: Vec<u8> = Vec::with_capacity(5);
@@ -131,14 +129,14 @@ mod tests {
         }
         assert_eq!(&s, "C:37 T:34 T:37 G:41 A:32 ");
 
-        let mut it = b.aux();
+        let mut it = b.aux_tags();
         assert_eq!(it.next().unwrap().unwrap().id().unwrap(), "NM");
         assert_eq!(it.next().unwrap().unwrap().id().unwrap(), "RG");
         assert_eq!(it.next().unwrap().unwrap().id().unwrap(), "xs");
         assert_eq!(it.next().unwrap().unwrap().id().unwrap(), "xt");
         assert!(it.next().is_none());
 
-        let mut it = b.aux().skip(2);
+        let mut it = b.aux_tags().skip(2);
         let tag = it.next().unwrap().unwrap();
         assert_eq!(tag.id().unwrap(), "xs");
         let val = tag.get_val().unwrap();

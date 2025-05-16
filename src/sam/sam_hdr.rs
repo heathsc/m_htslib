@@ -147,39 +147,39 @@ impl fmt::Display for SamHdrLine<'_> {
 #[macro_export]
 macro_rules! sam_hdr_line {
     ( "HD", $( $t: expr, $v:expr ),* ) => {{
-        let mut tmp_line = SamHdrLine::line(SamHdrType::Hd);
+        let mut tmp_line = $crate::sam::SamHdrLine::line($crate::sam::SamHdrType::Hd);
         $(
-           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+           tmp_line.push($crate::sam::SamHdrTagValue::new_tag($t, $v)?);
         )*
-        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(tmp_line);
         tl
     }};
     ( "SQ", $( $t: expr, $v:expr ),* ) => {{
-        let mut tmp_line = SamHdrLine::line(SamHdrType::Sq);
+        let mut tmp_line = $crate::sam::SamHdrLine::line($crate::sam::SamHdrType::Sq);
         $(
-           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+           tmp_line.push($crate::sam::SamHdrTagValue::new_tag($t, $v)?);
         )*
-        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(tmp_line);
         tl
     }};
     ( "RG", $( $t: expr, $v:expr ),* ) => {{
-        let mut tmp_line = SamHdrLine::line(SamHdrType::Rg);
+        let mut tmp_line = $crate::sam::SamHdrLine::line($crate::sam::SamHdrType::Rg);
         $(
-           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+           tmp_line.push($crate::sam::SamHdrTagValue::new_tag($t, $v)?);
         )*
-        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(tmp_line);
         tl
     }};
     ( "PG", $( $t: expr, $v:expr ),* ) => {{
-        let mut tmp_line = SamHdrLine::line(SamHdrType::Pg);
+        let mut tmp_line = $crate::sam::SamHdrLine::line($crate::sam::SamHdrType::Pg);
         $(
-           tmp_line.push(SamHdrTagValue::new_tag($t, $v)?);
+           tmp_line.push($crate::sam::SamHdrTagValue::new_tag($t, $v)?);
         )*
-        let tl: Result<SamHdrLine, SamError> = Ok(tmp_line);
+        let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(tmp_line);
         tl
     }};
     ( "CO", $s:expr ) => {
-        let tl: Result<SamHdrLine, SamError> = Ok(SamHdrLine::comment($s));
+        let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(SamHdrLine::comment($s));
         tl
     };
 }

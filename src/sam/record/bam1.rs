@@ -3,7 +3,7 @@
 use std::{ffi::CStr, ptr::copy_nonoverlapping};
 mod aux;
 pub mod aux_error;
-mod parse;
+pub mod parse;
 mod record_impl;
 mod rust_impl;
 

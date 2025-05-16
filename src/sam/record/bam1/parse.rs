@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use libc::{c_char, c_int};
 
 use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
@@ -6,7 +8,7 @@ use crate::{
     base::Base,
     hts::HtsPos,
     kstring::KString,
-    sam::{SamHdrRaw, cigar_buf::CigarBuf},
+    sam::{SamHdr, SamHdrRaw, cigar_buf::CigarBuf},
 };
 
 impl BamRec {
@@ -16,10 +18,12 @@ impl BamRec {
         hdr: &mut SamHdrRaw,
         ks: &mut KString,
         cb: &mut CigarBuf,
+        hash: &mut HashSet<[u8; 2]>,
     ) -> Result<(), SamError> {
         self.inner.l_data = 0;
         self.inner.core = bam1_core_t::default();
-
+        hash.clear();
+        
         for (ix, s) in p.split(|c| *c == b'\t').enumerate() {
             match ix {
                 0 => self.parse_qname(s)?,
@@ -33,7 +37,7 @@ impl BamRec {
                 8 => self.inner.core.isze = std::str::from_utf8(s)?.parse::<HtsPos>()?,
                 9 => self.parse_seq(s)?,
                 10 => self.parse_qual(s)?,
-                _ => self.parse_aux_tag(s)?,
+                _ => self.parse_aux_tag(s, hash)?,
             }
         }
 
@@ -288,6 +292,24 @@ fn bytes_to_uint(s: &[u8], max: u64) -> Result<u64, SamError> {
         Err(SamError::ErrorParsingUint)
     } else {
         Ok(x)
+    }
+}
+
+#[derive(Default)]
+pub struct SamParser {
+    ks: KString,
+    cg: CigarBuf,
+    hash: HashSet<[u8; 2]>,
+}
+
+impl SamParser {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn parse(&mut self, b: &mut BamRec, hdr: &mut SamHdr, p: &[u8]) -> Result<(), SamError> {
+        b.parse(p, hdr, &mut self.ks, &mut self.cg, &mut self.hash)
     }
 }
 

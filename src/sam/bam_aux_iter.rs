@@ -5,11 +5,11 @@ use crate::{AuxError, LeBytes};
 /// This holds the binary data relating to an individual aux tag from a Bam record
 /// The length of the data slice is always at least 3 (2 byte tag + type)
 #[derive(Debug)]
-pub struct BamAuxTagData<'a> {
+pub struct BamAuxTag<'a> {
     data: &'a [u8],
 }
 
-impl BamAuxTagData<'_> {
+impl BamAuxTag<'_> {
     pub fn id(&self) -> Result<&str, AuxError> {
         let s = std::str::from_utf8(&self.data[..2])?;
         Ok(s)
@@ -19,10 +19,18 @@ impl BamAuxTagData<'_> {
     pub fn get_val(&self) -> Result<BamAuxVal, AuxError> {
         BamAuxVal::from_u8_slice(&self.data[2..])
     }
+
+    #[inline]
+    pub fn get_type(&self) -> Result<(BamAuxTagType, Option<BamAuxTagType>), AuxError> {
+        Ok(match get_tag_info(self.data[2])?.0 {
+            BamAuxTagType::Array => (BamAuxTagType::Array, Some(get_tag_info(self.data[3])?.0)),
+            t => (t, None),
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum BamAuxTagType {
+pub enum BamAuxTagType {
     Char,
     Int8,
     UInt8,
@@ -124,12 +132,42 @@ impl<'a> HexString<'a> {
             }
         }
     }
-    
+
     #[inline]
     pub fn to_cstr(&self) -> Result<&CStr, AuxError> {
         let s = CStr::from_bytes_with_nul(self.data)?;
         Ok(s)
-    } 
+    }
+
+    #[inline]
+    pub fn bytes(&self) -> HexIter {
+        HexIter { data: self.data }
+    }
+}
+
+pub struct HexIter<'a> {
+    data: &'a [u8],
+}
+
+impl Iterator for HexIter<'_> {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let get_x = |c: u8| match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            _ => None,
+        };
+
+        self.data.split_at_checked(2).and_then(|(s1, s2)| {
+            self.data = s2;
+            match (get_x(s1[0]), get_x(s1[1])) {
+                (Some(a), Some(b)) => Some((a << 4) | b),
+                _ => None,
+            }
+        })
+    }
 }
 
 pub struct AuxArray<'a, T> {
@@ -164,12 +202,14 @@ impl<T: Sized + LeBytes> Iterator for AuxArray<'_, T> {
 }
 
 pub struct AuxIntArray<'a, T> {
-    inner: AuxArray<'a, T>
+    inner: AuxArray<'a, T>,
 }
 
-impl <'a, T> AuxIntArray<'a, T> {
+impl<'a, T> AuxIntArray<'a, T> {
     fn new(data: &'a [u8]) -> Self {
-        Self { inner: AuxArray::new(data) }
+        Self {
+            inner: AuxArray::new(data),
+        }
     }
 }
 
@@ -180,7 +220,7 @@ fn mk_aux_int_array<T: Sized + LeBytes + Into<i64>>(d: &[u8]) -> AuxIntArray<'_,
 
 impl<T: Sized + LeBytes + Into<i64>> Iterator for AuxIntArray<'_, T> {
     type Item = i64;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|x| x.into())
     }
@@ -232,7 +272,7 @@ impl<'a> BamAuxVal<'a> {
             }
         }
     }
-    
+
     fn get_array_var(s: &'a [u8]) -> Result<Self, AuxError> {
         if s.len() < 5 {
             Err(AuxError::CorruptBamTag)
@@ -250,7 +290,7 @@ impl<'a> BamAuxVal<'a> {
                 _ => Err(AuxError::CorruptBamTag),
             }
         }
-    }  
+    }
 }
 
 pub struct BamAuxIter<'a> {
@@ -264,7 +304,7 @@ impl<'a> BamAuxIter<'a> {
 }
 
 impl<'a> Iterator for BamAuxIter<'a> {
-    type Item = Result<BamAuxTagData<'a>, AuxError>;
+    type Item = Result<BamAuxTag<'a>, AuxError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.is_empty() {
@@ -273,10 +313,155 @@ impl<'a> Iterator for BamAuxIter<'a> {
             Some(get_bam_tag_length(self.data).map(|l| {
                 let (data, s) = self.data.split_at(l);
                 self.data = s;
-                BamAuxTagData { data }
+                BamAuxTag { data }
             }))
         }
     }
 }
 
 impl FusedIterator for BamAuxIter<'_> {}
+
+mod tests {
+    #![allow(unused)]
+
+    use super::*;
+
+    use crate::{
+        SamError,
+        hts::HtsFile,
+        kstring::KString,
+        sam::{BamAuxVal, SamHdrLine},
+        sam::{BamRec, CigarBuf, SamHdr, SamParser, SequenceIter},
+        sam_hdr_line,
+    };
+
+    fn make_header<'a>() -> Result<SamHdr<'a>, SamError> {
+        let mut hdr = SamHdr::new();
+        hdr.add_lines(c"@HD\tVN:1.6\tSO:coordinate")?;
+        assert_eq!(hdr.length().unwrap(), 25);
+        let nl = sam_hdr_line!("SQ", "SN", "chr1", "LN", "1009800")?;
+        hdr.add_line(&nl)?;
+
+        Ok(hdr)
+    }
+
+    #[test]
+    fn test_tags() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
+
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(&mut b, &mut hdr, b"read_id1\t147\tchr1\t412\t49\t11M\t=\t193\t-380\tCTGCAATACGC\tAAFJFFBCAFF\txa:Z:Hello world\txb:i:666")?;
+
+        let mut tags = b.aux_tags();
+
+        // Check first tag (Z)
+        let tag = tags.next().unwrap()?;
+        assert_eq!(tag.id()?, "xa");
+        let x = tag.get_val()?;
+        if let BamAuxVal::String(s) = x {
+            assert_eq!(s, c"Hello world")
+        } else {
+            panic!("Wrong tag type")
+        }
+
+        // Check second tag (i)
+        let tag = tags.next().unwrap()?;
+        assert_eq!(tag.id()?, "xb");
+        let x = tag.get_val()?;
+        if let BamAuxVal::Int(i) = x {
+            assert_eq!(i, 666)
+        } else {
+            panic!("Wrong tag type")
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hex_tags() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
+
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(
+            &mut b,
+            &mut hdr,
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:H:1A93AF\txb:H:",
+        )?;
+        let mut it = b.aux_tags();
+
+        let tag = it.next().unwrap()?;
+        assert_eq!(tag.id()?, "xa");
+        let x = tag.get_val()?;
+        if let BamAuxVal::HexString(s) = x {
+            assert_eq!(s.to_cstr()?, c"1A93AF");
+            let v: Vec<_> = s.bytes().collect();
+            assert_eq!(&v, &[0x1a, 0x93, 0xaf]);
+        } else {
+            panic!("Wrong tag type")
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_tags() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
+
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(
+            &mut b,
+            &mut hdr,
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:B:c,7782,43,-999,1023,42",
+        )?;
+        let mut it = b.aux_tags();
+
+        let tag = it.next().unwrap()?;
+        assert_eq!(tag.id()?, "xa");
+        let ret = tag.get_type()?;
+        assert_eq!(ret, (BamAuxTagType::Array, Some(BamAuxTagType::Int16)));
+        
+        let x = tag.get_val()?;
+        if let BamAuxVal::IntArray(s) = x {
+            let v: Vec<_> = s.collect();
+            assert_eq!(&v, &[7782, 43, -999, 1023, 42]);
+        } else {
+            panic!("Wrong tag type")
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_array_tags2() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
+
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(
+            &mut b,
+            &mut hdr,
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:B:f,1.5,7.0e-2,6,8.2",
+        )?;
+        let mut it = b.aux_tags();
+
+        let tag = it.next().unwrap()?;
+        assert_eq!(tag.id()?, "xa");
+        let ret = tag.get_type()?;
+        assert_eq!(ret, (BamAuxTagType::Array, Some(BamAuxTagType::Float32)));
+        
+        let x = tag.get_val()?;
+        if let BamAuxVal::Float32Array(s) = x {
+            let v: Vec<_> = s.collect();
+            assert_eq!(&v, &[1.5,0.07, 6.0, 8.2]);
+        } else {
+            panic!("Wrong tag type")
+        }
+
+        Ok(())
+    }
+}

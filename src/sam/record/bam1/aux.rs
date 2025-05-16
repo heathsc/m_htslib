@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use super::{aux_error::AuxError, super::BamRec};
 use crate::{LeBytes, sam::BamAuxIter};
@@ -18,17 +18,21 @@ impl BamRec {
     }
     
     #[inline]
-    pub fn aux(&self) -> BamAuxIter {
+    pub fn aux_tags(&self) -> BamAuxIter {
         BamAuxIter::new(self.get_aux_slice())
     }
     
-    pub(super) fn parse_aux_tag(&mut self, s: &[u8]) -> Result<(), AuxError> {
+    pub(super) fn parse_aux_tag(&mut self, s: &[u8], hash: &mut HashSet<[u8; 2]>) -> Result<(), AuxError> {
         if s.len() < 5 {
             Err(AuxError::ShortTag)
         } else if s.len() == 5 && s[3] != b'Z' && s[3] != b'H' {
             Err(AuxError::ZeroLengthTag)
+        } else if !(s[0].is_ascii_alphabetic() && s[1].is_ascii_alphanumeric()) {
+            Err(AuxError::BadCharsInTagId(s[0], s[1]))
         } else if &[s[2], s[4]] != b"::" {
             Err(AuxError::BadFormat)
+        } else if !hash.insert([s[0], s[1]]) { // Check if this tag has already been used for this record
+            Err(AuxError::DuplicateTagId(s[0] as char, s[1] as char))
         } else {
             // Copy 2 letter tag ID
             self.inner.copy_data(&s[..2]);
@@ -176,7 +180,7 @@ impl BamRec {
         if (s.len() & 1) != 0 {
             Err(AuxError::OddHexDigits)
         } else if s.iter().any(|c| !c.is_ascii_hexdigit()) {
-            Err(AuxError::IllegalHCharacters)
+            Err(AuxError::IllegalHexCharacters)
         } else {
             self.push_z_h_tag(b'H', s);
             Ok(())

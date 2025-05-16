@@ -8,6 +8,10 @@ pub enum AuxError {
     InternalError,
     #[error("Aux tag too short (incomplete)")]
     ShortTag,
+    #[error("Bad characters in tag ID ({0}, {1})")]
+    BadCharsInTagId(u8, u8),
+    #[error("Duplicate tag ID ({0}{1})")]
+    DuplicateTagId(char, char),
     #[error("Bad aux tag format")]
     BadFormat,
     #[error("Bad BAM aux tag format ({0})")]
@@ -33,7 +37,7 @@ pub enum AuxError {
     #[error("Illegal characters in Z aux tag")]
     IllegalZCharacters,
     #[error("Non hex digits in H aux tag")]
-    IllegalHCharacters,
+    IllegalHexCharacters,
     #[error("Unknown aux tag type '{0}'")]
     UnknownType(char),
     #[error("Unknown aux array type '{0}'")]
