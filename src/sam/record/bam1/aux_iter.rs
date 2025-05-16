@@ -27,6 +27,11 @@ impl BamAuxTag<'_> {
             t => (t, None),
         })
     }
+    
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -492,6 +497,16 @@ mod tests {
         
         // RG tag does not exist in this record
         assert!(b.get_tag("RG")?.is_none());
+        
+        drop(x);
+        
+        let n = b.del_tags(&["xb", "xc"])?;
+        assert_eq!(n, 2);
+        
+        b.del_tag("xd")?;
+        
+        let t = b.aux_tags().next().unwrap()?;
+        assert_eq!(t.id()?, "xa");
         
         Ok(())
     }

@@ -1,7 +1,52 @@
 use std::{collections::HashSet, str::FromStr};
 
-use super::{aux_error::AuxError, aux_iter::BamAuxTag, super::BamRec};
+use libc::c_int;
+
+use super::{super::BamRec, aux_error::AuxError, aux_iter::BamAuxTag};
 use crate::{LeBytes, sam::BamAuxIter};
+
+
+
+/// Represnts a block of tag data that is to be deleted.
+/// i is the index of the tag w.r.t to all tags stored in the record
+/// offset is the offset in bytes from the start of the data segment for the bam1_t record
+/// len is the length in bytes of the section to be deleted.
+/// 
+/// If adjacent tags are to be deleted, then the Deletion Blocks are merged. In this case offset is for the
+/// start of the merged block, and i is the index of the *last* tag in the block. 
+struct DeletionBlock {
+    i: usize,
+    offset: isize,
+    len: usize,
+}
+
+struct DeletionBlocks {
+    v: Vec<DeletionBlock>,
+}
+
+impl DeletionBlocks {
+    #[inline]
+    fn new(n: usize) -> Self {
+        Self {
+            v: Vec::with_capacity(n),
+        }
+    }
+
+    fn add_block(&mut self, i: usize, offset: isize, len: usize) {
+        let st = |v: &mut Vec<DeletionBlock>| v.push(DeletionBlock { i, offset, len });
+
+        if let Some(p) = self.v.last_mut() {
+            if p.i + 1 == i {
+                p.i += 1;
+                p.len += len;
+            } else {
+                st(&mut self.v)
+            }
+        } else {
+            st(&mut self.v)
+        }
+    }
+}
 
 impl BamRec {
     fn get_aux_slice(&self) -> &[u8] {
@@ -11,28 +56,91 @@ impl BamRec {
             + core.l_qname as usize
             + core.l_qseq as usize
             + ((core.l_qseq + 1) >> 1) as usize;
-        
+
         assert!(off <= b.l_data as usize, "Corrupt BAM record");
         let sz = b.l_data as usize - off;
         self.make_data_slice(off, sz)
     }
-    
+
     #[inline]
     pub fn aux_tags(&self) -> BamAuxIter {
         BamAuxIter::new(self.get_aux_slice())
     }
-    
+
     pub fn get_tag<'a>(&'a self, tag_id: &str) -> Result<Option<BamAuxTag<'a>>, AuxError> {
         for t in self.aux_tags() {
             let tag = t?;
             if tag.id()? == tag_id {
-                return Ok(Some(tag))
+                return Ok(Some(tag));
             }
         }
         Ok(None)
     }
-    
-    pub(super) fn parse_aux_tag(&mut self, s: &[u8], hash: &mut HashSet<[u8; 2]>) -> Result<(), AuxError> {
+
+    /// Delete the tags with the ids in tag_ids. Returns the nnumber of deleted tags on success
+    /// Note that if a tag is not found, this does not contitute and error (errors are caused
+    /// by the bam1_t structure being corrupt).
+    /// Adjacent blocks will be merged for efficiency, and if a block is at the end of the stored tags then
+    /// deletion will simply involve altering the l_data field in bam1_t (effectively truncating the data section)
+    pub fn del_tags(&mut self, tag_ids: &[&str]) -> Result<usize, AuxError> {
+        let (del, n) = self.find_tags_to_delete(tag_ids)?;
+        // v contains the start tags and total length of each contiguous block of tags that should be deleted
+        // We will do the required moves one by one.
+        let mut adj: isize = 0;
+        for d in del.v {
+            let l_data = self.inner.l_data as isize;
+            let l = d.len as isize;
+            let off = d.offset - adj;
+            let end_off = off + l;
+            assert!(end_off <= l_data, "Severe corruption of Bam record");
+            if end_off < l_data {
+                let sz = l_data - end_off;
+                let p = self.inner.data;
+                unsafe {
+                    p.offset(off).copy_from(p.offset(end_off), sz as usize)
+                }
+            }
+            self.inner.l_data -= l as c_int;
+            adj += l;
+        }
+        Ok(n)
+    }
+
+    #[inline]
+    pub fn del_tag(&mut self, tag_id: &str) -> Result<usize, AuxError> {
+        self.del_tags(&[tag_id])
+    }
+
+    /// Iterate through all tags to find the ones that match, storing the tag data.
+    /// If there are multiple tags tso be deleted in adjacent positions then they will be merged.
+    fn find_tags_to_delete(
+        &self,
+        tag_ids: &[&str],
+    ) -> Result<(DeletionBlocks, usize), AuxError> {
+        let mut del = DeletionBlocks::new(tag_ids.len());
+        let mut n = 0;
+        for (i, t) in self.aux_tags().enumerate() {
+            let tag = t?;
+            if tag_ids.contains(&tag.id()?) {
+                let len = tag.data().len();
+                let p = tag.data().as_ptr() as *const i8;
+                let off = unsafe { p.offset_from(self.inner.data) };
+                del.add_block(i, off, len);
+                n += 1;
+                if n == tag_ids.len() {
+                    // We have found all the tags to be deleted, so no point looking any further
+                    break;
+                }
+            }
+        }
+        Ok((del, n))
+    }
+
+    pub(super) fn parse_aux_tag(
+        &mut self,
+        s: &[u8],
+        hash: &mut HashSet<[u8; 2]>,
+    ) -> Result<(), AuxError> {
         if s.len() < 5 {
             Err(AuxError::ShortTag)
         } else if s.len() == 5 && s[3] != b'Z' && s[3] != b'H' {
@@ -41,7 +149,8 @@ impl BamRec {
             Err(AuxError::BadCharsInTagId(s[0], s[1]))
         } else if &[s[2], s[4]] != b"::" {
             Err(AuxError::BadFormat)
-        } else if !hash.insert([s[0], s[1]]) { // Check if this tag has already been used for this record
+        } else if !hash.insert([s[0], s[1]]) {
+            // Check if this tag has already been used for this record
             Err(AuxError::DuplicateTagId(s[0] as char, s[1] as char))
         } else {
             // Copy 2 letter tag ID
