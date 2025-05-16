@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use crate::{
     SamError,
     hts::HtsPos,
-    sam::{BamRec, Cigar, CigarElem, SeqIter, QualIter, SeqQualIter, cigar},
+    sam::{BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter, cigar},
 };
 
 use libc::c_int;
@@ -100,52 +100,39 @@ impl BamRec {
         self.inner.core.isze
     }
 
-    fn seq_slice(&self) -> &[u8] {
-        let b = &self.inner;
-        let core = &b.core;
-        if b.data.is_null() || core.l_qseq == 0 {
+    pub(super) fn make_data_slice(&self, off: usize, sz: usize) -> &[u8] {
+        assert!(off <= self.inner.l_data as usize, "Bam data corrupt");
+        if self.inner.data.is_null() || sz == 0 {
             &[]
         } else {
-            let core = &b.core;
-            let off = ((core.n_cigar as usize) << 2) + core.l_qname as usize;
-            unsafe {
-                std::slice::from_raw_parts(
-                    b.data.add(off) as *const u8,
-                    ((core.l_qseq + 1) >> 1) as usize,
-                )
-            }
+            unsafe { std::slice::from_raw_parts(self.inner.data.add(off) as *const u8, sz) }
         }
     }
 
+    fn seq_slice(&self) -> &[u8] {
+        let core = &self.inner.core;
+        let off = ((core.n_cigar as usize) << 2) + core.l_qname as usize;
+        self.make_data_slice(off, ((core.l_qseq + 1) >> 1) as usize)
+    }
+
     pub fn qual_slice(&self) -> &[u8] {
-        let b = &self.inner;
-        let core = &b.core;
-        if b.data.is_null() || core.l_qseq == 0 {
-            &[]
-        } else {
-            let core = &b.core;
-            let off = ((core.n_cigar as usize) << 2)
-                + core.l_qname as usize
-                + ((core.l_qseq + 1) >> 1) as usize;
-            unsafe {
-                std::slice::from_raw_parts(
-                    b.data.add(off) as *const u8,
-                    core.l_qseq as usize,
-                )
-            }
-        }
+        let core = &self.inner.core;
+        let off = ((core.n_cigar as usize) << 2)
+            + core.l_qname as usize
+            + ((core.l_qseq + 1) >> 1) as usize;
+        self.make_data_slice(off, core.l_qseq as usize)
     }
 
     #[inline]
     pub fn seq(&self) -> SeqIter {
         SeqIter::new(self.seq_slice(), self.inner.core.l_qseq as usize)
     }
-    
+
     #[inline]
     pub fn qual(&self) -> QualIter {
         QualIter::new(self.qual_slice())
     }
-    
+
     #[inline]
     pub fn seq_qual(&self) -> SeqQualIter {
         SeqQualIter::new(self.seq_slice(), self.qual_slice())

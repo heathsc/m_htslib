@@ -95,6 +95,12 @@ impl bam1_t {
 
         self.data = new_data as *mut c_char;
         self.m_data = s as u32;
+        if s < self.l_data as usize {
+            // If we have reduced the data size below what was in use, then we can't trust anything
+            // so we clear the record.
+            self.l_data = 0;
+            self.core = bam1_core_t::default();
+        }
         self.l_data = self.l_data.min(s as c_int);
     }
 

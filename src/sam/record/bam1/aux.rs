@@ -1,44 +1,27 @@
 use std::str::FromStr;
 
 use super::{aux_error::AuxError, super::BamRec};
-use crate::ToLeBytes;
-/* 
-/// Auxillary SAM tags
-///
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum AuxType {
-    Numeric(usize), // Numeric tag with fixed size
-    NullTerminated, // String tag
-    Array,          // Integer or byte array
-    None,
-}
+use crate::{LeBytes, sam::BamAuxIter};
 
-impl AuxType {
-    fn from_u8_code(tp: u8) -> Self {
-        match tp {
-            b'a' | b'A' | b'c' | b'C' => Self::Numeric(1),
-            b's' | b'S' => Self::Numeric(2),
-            b'i' | b'I' | b'f' => Self::Numeric(4),
-            b'd' => Self::Numeric(8),
-            b'Z' | b'H' => Self::NullTerminated,
-            b'B' => Self::Array,
-            _ => Self::None,
-        }
-    }
-}
-
-fn array_type2size(c: u8) -> Result<usize, AuxError> {
-    match c {
-        b'A' | b'c' | b'C' => Ok(1),
-        b's' | b'S' => Ok(2),
-        b'i' | b'I' | b'f' => Ok(4),
-        b'd' => Ok(8),
-        _ => Err(AuxError::UnknownArrayType(c as char)),
-    }
-}
-
-*/
 impl BamRec {
+    fn get_aux_slice(&self) -> &[u8] {
+        let b = &self.inner;
+        let core = &b.core;
+        let off = ((core.n_cigar as usize) << 2)
+            + core.l_qname as usize
+            + core.l_qseq as usize
+            + ((core.l_qseq + 1) >> 1) as usize;
+        
+        assert!(off <= b.l_data as usize, "Corrupt BAM record");
+        let sz = b.l_data as usize - off;
+        self.make_data_slice(off, sz)
+    }
+    
+    #[inline]
+    pub fn aux(&self) -> BamAuxIter {
+        BamAuxIter::new(self.get_aux_slice())
+    }
+    
     pub(super) fn parse_aux_tag(&mut self, s: &[u8]) -> Result<(), AuxError> {
         if s.len() < 5 {
             Err(AuxError::ShortTag)
@@ -129,7 +112,7 @@ impl BamRec {
         }
     }
 
-    fn read_int_array<T: ToLeBytes + TryFrom<i64>>(&mut self, s: &[u8]) -> Result<usize, AuxError> {
+    fn read_int_array<T: LeBytes + TryFrom<i64>>(&mut self, s: &[u8]) -> Result<usize, AuxError> {
         let mut n_elem = 0;
         let mut max_val = 0;
         let mut min_val = 0;
@@ -157,7 +140,7 @@ impl BamRec {
         }
     }
 
-    fn read_float_array<T: ToLeBytes + FromStr>(&mut self, s: &[u8]) -> Result<usize, AuxError> {
+    fn read_float_array<T: LeBytes + FromStr>(&mut self, s: &[u8]) -> Result<usize, AuxError> {
         let mut n_elem = 0;
 
         for p in s.split(|c| *c == b',') {
@@ -181,7 +164,7 @@ impl BamRec {
     }
 
     fn parse_z_tag(&mut self, s: &[u8]) -> Result<(), AuxError> {
-        if s.iter().any(|c| !c.is_ascii_graphic()) {
+        if s.iter().any(|c| !(b' '..=b'~').contains(c)) {
             Err(AuxError::IllegalZCharacters)
         } else {
             self.push_z_h_tag(b'Z', s);
@@ -223,7 +206,7 @@ impl BamRec {
         Ok(())
     }
 
-    fn copy_num<T: ToLeBytes>(&mut self, c: u8, x: T) {
+    fn copy_num<T: LeBytes>(&mut self, c: u8, x: T) {
         self.inner.push_char(c);
         self.inner.copy_data(x.to_le().as_ref());
     }

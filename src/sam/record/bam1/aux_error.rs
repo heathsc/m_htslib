@@ -4,10 +4,16 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum AuxError {
+    #[error("Internal Error")]
+    InternalError,
     #[error("Aux tag too short (incomplete)")]
     ShortTag,
     #[error("Bad aux tag format")]
     BadFormat,
+    #[error("Bad BAM aux tag format ({0})")]
+    BadBamTagFormat(u8),
+    #[error("BAM aux tag corrupt")]
+    CorruptBamTag,
     #[error("Bad A (single character) aux tag format")]
     BadAFormat,
     #[error("Illegal zero length aux tag")]
