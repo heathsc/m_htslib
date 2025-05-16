@@ -10,7 +10,8 @@ pub struct BamRec {
 mod tests {
     #[allow(unused)]
     use super::*;
-    use crate::sam::BamAuxTagData;
+    #[allow(unused)]
+    use crate::sam::BamAuxVal;
     #[allow(unused)]
     use crate::{
         hts::HtsFile,
@@ -138,9 +139,14 @@ mod tests {
         assert!(it.next().is_none());
 
         let mut it = b.aux().skip(2);
-        let item = it.next().unwrap().unwrap();
-        assert_eq!(item.id().unwrap(), "xs");
-        
-        
+        let tag = it.next().unwrap().unwrap();
+        assert_eq!(tag.id().unwrap(), "xs");
+        let val = tag.get_val().unwrap();
+        if let BamAuxVal::IntArray(it1) = val {
+            let v: Vec<_> = it1.collect();
+            assert_eq!(&v, &[-32, 400, 21])
+        } else {
+            panic!("Bad type")
+        }
     }
 }

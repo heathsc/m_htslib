@@ -14,7 +14,7 @@ impl BamAuxTagData<'_> {
         let s = std::str::from_utf8(&self.data[..2])?;
         Ok(s)
     }
-    
+
     #[inline]
     pub fn get_val(&self) -> Result<BamAuxVal, AuxError> {
         BamAuxVal::from_u8_slice(&self.data[2..])
@@ -107,17 +107,32 @@ pub struct HexString<'a> {
     data: &'a [u8],
 }
 
-pub struct AuxIntArray<'a> {
-    val_type: BamAuxTagType,
-    data: &'a [u8],
+impl<'a> HexString<'a> {
+    /// Convert a [u8] slice to a HexString from a Bam record. Note that the
+    /// number of digits must be even and the slice should finish with a zero,
+    /// so the slice length should be odd. An error is returned if the length is
+    /// not odd or if the last element of the slice is not zero or if there is a
+    /// zero anywhere in the slice apart from the last element.
+    fn from_u8_slice(data: &'a [u8]) -> Result<Self, AuxError> {
+        let l = data.len();
+        if (l & 1) == 0 {
+            Err(AuxError::OddHexDigits)
+        } else {
+            match data.iter().position(|c| *c == 0) {
+                Some(x) if x + 1 == l => Ok(Self { data }),
+                Some(_) | None => Err(AuxError::CorruptBamTag),
+            }
+        }
+    }
+    
+    #[inline]
+    pub fn to_cstr(&self) -> Result<&CStr, AuxError> {
+        let s = CStr::from_bytes_with_nul(self.data)?;
+        Ok(s)
+    } 
 }
 
-pub struct AuxFloatArray<'a> {
-    val_type: BamAuxTagType,
-    data: &'a [u8],
-}
-
-struct AuxArray<'a, T> {
+pub struct AuxArray<'a, T> {
     data: &'a [u8],
     marker: PhantomData<T>,
 }
@@ -140,20 +155,46 @@ impl<T: Sized + LeBytes> Iterator for AuxArray<'_, T> {
         } else {
             let n = std::mem::size_of::<T>();
             assert!(self.data.len() >= n);
-            let x = T::from_le(
-                self.data[..n]
-                    .try_into()
-                    .map_err(|_| AuxError::InternalError)
-                    .unwrap(),
-            );
-            self.data = &self.data[n..];
+            let (s1, s2) = self.data.split_at(n);
+            let x: T = get_single_aux_val(s1);
+            self.data = s2;
             Some(x)
         }
     }
 }
 
-pub struct AuxCharArray<'a> {
-    data: &'a [u8],
+pub struct AuxIntArray<'a, T> {
+    inner: AuxArray<'a, T>
+}
+
+impl <'a, T> AuxIntArray<'a, T> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { inner: AuxArray::new(data) }
+    }
+}
+
+#[inline(always)]
+fn mk_aux_int_array<T: Sized + LeBytes + Into<i64>>(d: &[u8]) -> AuxIntArray<'_, T> {
+    AuxIntArray::new(d)
+}
+
+impl<T: Sized + LeBytes + Into<i64>> Iterator for AuxIntArray<'_, T> {
+    type Item = i64;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|x| x.into())
+    }
+}
+
+#[inline]
+fn get_single_aux_val<T: Sized + LeBytes>(s: &[u8]) -> T {
+    T::from_le(s.try_into().map_err(|_| AuxError::InternalError).unwrap())
+}
+
+#[inline]
+fn get_string_val(s: &[u8]) -> Result<&CStr, AuxError> {
+    let ret = CStr::from_bytes_with_nul(s)?;
+    Ok(ret)
 }
 
 pub enum BamAuxVal<'a> {
@@ -163,27 +204,53 @@ pub enum BamAuxVal<'a> {
     Float64(f64),
     String(&'a CStr),
     HexString(HexString<'a>),
-    CharArray(AuxCharArray<'a>),
-    IntArray(AuxIntArray<'a>),
+    CharArray(&'a [u8]),
+    IntArray(Box<dyn Iterator<Item = i64> + 'a>),
+    Float32Array(AuxArray<'a, f32>),
+    Float64Array(AuxArray<'a, f64>),
 }
 
-impl <'a>BamAuxVal<'a> {
+impl<'a> BamAuxVal<'a> {
     fn from_u8_slice(s: &'a [u8]) -> Result<Self, AuxError> {
-        let l = s.len();
-        if l < 2 {
+        if s.len() < 2 {
             Err(AuxError::CorruptBamTag)
         } else {
             match s[0] {
                 b'A' => Ok(Self::Char(s[1])),
                 b'c' => Ok(Self::Int((s[1] as i8) as i64)),
                 b'C' => Ok(Self::Int(s[1] as i64)),
-                
-                
+                b's' => Ok(Self::Int(get_single_aux_val::<i16>(&s[1..]) as i64)),
+                b'S' => Ok(Self::Int(get_single_aux_val::<u16>(&s[1..]) as i64)),
+                b'i' => Ok(Self::Int(get_single_aux_val::<i32>(&s[1..]) as i64)),
+                b'I' => Ok(Self::Int(get_single_aux_val::<u32>(&s[1..]) as i64)),
+                b'f' => Ok(Self::Float32(get_single_aux_val::<f32>(&s[1..]))),
+                b'd' => Ok(Self::Float64(get_single_aux_val::<f64>(&s[1..]))),
+                b'Z' => Ok(Self::String(get_string_val(&s[1..])?)),
+                b'H' => Ok(Self::HexString(HexString::from_u8_slice(&s[1..])?)),
+                b'B' => Self::get_array_var(&s[1..]),
                 _ => Err(AuxError::CorruptBamTag),
             }
         }
-        
     }
+    
+    fn get_array_var(s: &'a [u8]) -> Result<Self, AuxError> {
+        if s.len() < 5 {
+            Err(AuxError::CorruptBamTag)
+        } else {
+            match s[0] {
+                b'A' => Ok(Self::CharArray(&s[5..])),
+                b'c' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u8>(&s[5..])))),
+                b'C' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u8>(&s[5..])))),
+                b's' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<i16>(&s[5..])))),
+                b'S' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u16>(&s[5..])))),
+                b'i' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<i32>(&s[5..])))),
+                b'I' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<i32>(&s[5..])))),
+                b'f' => Ok(Self::Float32Array(AuxArray::new(&s[5..]))),
+                b'd' => Ok(Self::Float64Array(AuxArray::new(&s[5..]))),
+                _ => Err(AuxError::CorruptBamTag),
+            }
+        }
+    }  
 }
 
 pub struct BamAuxIter<'a> {

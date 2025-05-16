@@ -1,4 +1,4 @@
-use std::{num::{ParseFloatError, ParseIntError}, str::Utf8Error};
+use std::{ffi::FromBytesWithNulError, num::{ParseFloatError, ParseIntError}, str::Utf8Error};
 
 use thiserror::Error;
 
@@ -20,6 +20,8 @@ pub enum AuxError {
     ZeroLengthTag,
     #[error("Utf8 Error: {0}")]
     Utf8Error(#[from] Utf8Error),
+    #[error("CStr Error: {0}")]
+    CStrError(#[from] FromBytesWithNulError),
     #[error("Parse Int Error: {0}")]
     ParseIntError(#[from] ParseIntError),
     #[error("Parse Float Error: {0}")]
