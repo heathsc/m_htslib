@@ -8,14 +8,14 @@ use crate::{
     base::Base,
     hts::HtsPos,
     kstring::KString,
-    sam::{SamHdr, SamHdrRaw, cigar_buf::CigarBuf},
+    sam::{SamHdr, cigar_buf::CigarBuf},
 };
 
 impl BamRec {
     pub fn parse(
         &mut self,
         p: &[u8],
-        hdr: &mut SamHdrRaw,
+        hdr: &mut SamHdr,
         ks: &mut KString,
         cb: &mut CigarBuf,
         hash: &mut HashSet<[u8; 2]>,
@@ -85,7 +85,7 @@ impl BamRec {
     fn parse_mate_contig(
         &mut self,
         s: &[u8],
-        hdr: &mut SamHdrRaw,
+        hdr: &mut SamHdr,
         ks: &mut KString,
     ) -> Result<(), SamError> {
         self.inner.core.mtid = if s == b"=" {
@@ -205,7 +205,7 @@ impl BamRec {
     }
 }
 
-fn parse_contig(s: &[u8], hdr: &mut SamHdrRaw, ks: &mut KString) -> Result<i32, SamError> {
+fn parse_contig(s: &[u8], hdr: &mut SamHdr, ks: &mut KString) -> Result<i32, SamError> {
     if s == b"*" {
         Ok(-1)
     } else if hdr.nref() == 0 {

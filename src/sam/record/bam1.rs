@@ -3,6 +3,7 @@
 use std::{ffi::CStr, ptr::copy_nonoverlapping};
 mod aux;
 pub mod aux_error;
+pub mod bam_aux_iter;
 pub mod parse;
 mod record_impl;
 mod rust_impl;
@@ -13,7 +14,7 @@ const BAM_USER_OWNS_STRUCT: u32 = 1;
 #[allow(unused)]
 const BAM_USER_OWNS_DATA: u32 = 2;
 
-use crate::{hts::HtsPos, SamError};
+use crate::{SamError, hts::HtsPos};
 
 pub const BAM_FPAIRED: u16 = 1;
 pub const BAM_FPROPER_PAIR: u16 = 2;
@@ -145,7 +146,7 @@ impl bam1_t {
     fn end_pos(&self) -> HtsPos {
         unsafe { bam_endpos(self) }
     }
-    
+
     fn set_query_name(&mut self, qname: &CStr) -> Result<(), SamError> {
         match unsafe { bam_set_qname(self, qname.as_ptr()) } {
             0 => Ok(()),

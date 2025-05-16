@@ -3,6 +3,9 @@ pub mod bam1;
 use bam1::*;
 pub use bam1::parse::SamParser;
 
+/// Wrapper around the htslib struct bam1_t.
+/// All non library rust code should work with BamRec rather than
+/// with bam1_t (which is private)
 #[derive(Clone, Default, Debug)]
 pub struct BamRec {
     inner: bam1_t,
