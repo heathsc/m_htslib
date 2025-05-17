@@ -1,5 +1,6 @@
-use std::{ffi::CStr, iter::FusedIterator, marker::PhantomData};
+use std::{ffi::CStr, fmt, iter::FusedIterator, marker::PhantomData};
 
+use super::bam_type_code::BamTypeCode;
 use crate::{AuxError, LeBytes};
 
 /// This holds the binary data relating to an individual aux tag from a Bam record
@@ -7,6 +8,20 @@ use crate::{AuxError, LeBytes};
 #[derive(Debug)]
 pub struct BamAuxTag<'a> {
     data: &'a [u8],
+}
+
+impl fmt::Display for BamAuxTag<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.data;
+        write!(
+            f,
+            "{}{}:{}",
+            s[0] as char,
+            s[1] as char,
+            self.get_val().expect("Corrupt Bam record")
+        )?;
+        Ok(())
+    }
 }
 
 impl BamAuxTag<'_> {
@@ -27,7 +42,7 @@ impl BamAuxTag<'_> {
             t => (t, None),
         })
     }
-    
+
     #[inline]
     pub fn data(&self) -> &[u8] {
         self.data
@@ -120,6 +135,12 @@ pub struct HexString<'a> {
     data: &'a [u8],
 }
 
+impl fmt::Display for HexString<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", std::str::from_utf8(self.data).unwrap())
+    }
+}
+
 impl<'a> HexString<'a> {
     /// Convert a [u8] slice to a HexString from a Bam record. Note that the
     /// number of digits must be even and the slice should finish with a zero,
@@ -130,11 +151,12 @@ impl<'a> HexString<'a> {
         let l = data.len();
         if (l & 1) == 0 {
             Err(AuxError::OddHexDigits)
+        } else if data[l - 1] != 0 {
+            Err(AuxError::CorruptBamTag)
+        } else if data[..l - 1].iter().any(|c| !c.is_ascii_hexdigit()) {
+            Err(AuxError::IllegalHexCharacters)
         } else {
-            match data.iter().position(|c| *c == 0) {
-                Some(x) if x + 1 == l => Ok(Self { data }),
-                Some(_) | None => Err(AuxError::CorruptBamTag),
-            }
+            Ok(Self { data })
         }
     }
 
@@ -180,6 +202,18 @@ pub struct AuxArray<'a, T> {
     marker: PhantomData<T>,
 }
 
+impl<T: Sized + LeBytes + BamTypeCode + fmt::Display> fmt::Display for AuxArray<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", T::type_code() as char)?;
+        let n = std::mem::size_of::<T>();
+        for s in self.data.chunks_exact(n) {
+            let x: T = get_single_aux_val(s);
+            write!(f, ",{}", x)?
+        }
+        Ok(())
+    }
+}
+
 impl<'a, T> AuxArray<'a, T> {
     fn new(data: &'a [u8]) -> Self {
         Self {
@@ -208,6 +242,14 @@ impl<T: Sized + LeBytes> Iterator for AuxArray<'_, T> {
 
 pub struct AuxIntArray<'a, T> {
     inner: AuxArray<'a, T>,
+}
+
+impl<T: Sized + LeBytes + Into<i64> + fmt::Display + BamTypeCode> AuxArrayIter
+    for AuxIntArray<'_, T>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
 }
 
 impl<'a, T> AuxIntArray<'a, T> {
@@ -242,6 +284,10 @@ fn get_string_val(s: &[u8]) -> Result<&CStr, AuxError> {
     Ok(ret)
 }
 
+pub trait AuxArrayIter: Iterator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
 pub enum BamAuxVal<'a> {
     Char(u8),
     Int(i64),
@@ -250,9 +296,28 @@ pub enum BamAuxVal<'a> {
     String(&'a CStr),
     HexString(HexString<'a>),
     CharArray(&'a [u8]),
-    IntArray(Box<dyn Iterator<Item = i64> + 'a>),
+    IntArray(Box<dyn AuxArrayIter<Item = i64> + 'a>),
     Float32Array(AuxArray<'a, f32>),
     Float64Array(AuxArray<'a, f64>),
+}
+
+impl fmt::Display for BamAuxVal<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Char(x) => write!(f, "A:{}", *x as char)?,
+            Self::Int(x) => write!(f, "i:{x}")?,
+            Self::Float32(x) => write!(f, "f:{x}")?,
+            Self::Float64(x) => write!(f, "d:{x}")?,
+            Self::String(s) => write!(f, "Z:{}", s.to_str().unwrap())?,
+            Self::HexString(hs) => write!(f, "H:{hs}")?,
+            Self::CharArray(s) => write!(f, "B:A:{}", std::str::from_utf8(s).unwrap())?,
+            Self::Float32Array(a) => write!(f, "B:{}", a)?,
+            Self::Float64Array(a) => write!(f, "B:{}", a)?,
+            Self::IntArray(a) => a.fmt(f)?,
+        }
+
+        Ok(())
+    }
 }
 
 impl<'a> BamAuxVal<'a> {
@@ -261,7 +326,13 @@ impl<'a> BamAuxVal<'a> {
             Err(AuxError::CorruptBamTag)
         } else {
             match s[0] {
-                b'A' => Ok(Self::Char(s[1])),
+                b'A' => {
+                    if s[1].is_ascii_graphic() {
+                        Ok(Self::Char(s[1]))
+                    } else {
+                        Err(AuxError::IllegalCharacters)
+                    }
+                }
                 b'c' => Ok(Self::Int((s[1] as i8) as i64)),
                 b'C' => Ok(Self::Int(s[1] as i64)),
                 b's' => Ok(Self::Int(get_single_aux_val::<i16>(&s[1..]) as i64)),
@@ -284,7 +355,7 @@ impl<'a> BamAuxVal<'a> {
         } else {
             match s[0] {
                 b'A' => Ok(Self::CharArray(&s[5..])),
-                b'c' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u8>(&s[5..])))),
+                b'c' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<i8>(&s[5..])))),
                 b'C' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u8>(&s[5..])))),
                 b's' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<i16>(&s[5..])))),
                 b'S' => Ok(Self::IntArray(Box::new(mk_aux_int_array::<u16>(&s[5..])))),
@@ -395,6 +466,8 @@ mod tests {
             &mut hdr,
             b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:H:1A93AF\txb:H:",
         )?;
+        eprintln!("OOOOK!");
+
         let mut it = b.aux_tags();
 
         let tag = it.next().unwrap()?;
@@ -429,7 +502,7 @@ mod tests {
         assert_eq!(tag.id()?, "xa");
         let ret = tag.get_type()?;
         assert_eq!(ret, (BamAuxTagType::Array, Some(BamAuxTagType::Int16)));
-        
+
         let x = tag.get_val()?;
         if let BamAuxVal::IntArray(s) = x {
             let v: Vec<_> = s.collect();
@@ -458,17 +531,17 @@ mod tests {
         assert_eq!(tag.id()?, "xa");
         let ret = tag.get_type()?;
         assert_eq!(ret, (BamAuxTagType::Array, Some(BamAuxTagType::Float32)));
-        
+
         let x = tag.get_val()?;
         if let BamAuxVal::Float32Array(s) = x {
             let v: Vec<_> = s.collect();
-            assert_eq!(&v, &[1.5,0.07, 6.0, 8.2]);
+            assert_eq!(&v, &[1.5, 0.07, 6.0, 8.2]);
         } else {
             panic!("Wrong tag type")
         }
         Ok(())
     }
-    
+
     #[test]
     fn test_get_tag() -> Result<(), SamError> {
         let mut hdr = make_header()?;
@@ -481,33 +554,62 @@ mod tests {
             &mut hdr,
             b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:i:4\txb:Z:Hi\txc:A:v\txd:B:c,4,8",
         )?;
-        
+
         let tag = b.get_tag("xc")?.expect("Did not find xc tag");
-        
+
         assert_eq!(tag.id()?, "xc");
         let ret = tag.get_type()?;
         assert_eq!(ret, (BamAuxTagType::Char, None));
-        
+
         let x = tag.get_val()?;
         if let BamAuxVal::Char(s) = x {
             assert_eq!(s, b'v');
         } else {
             panic!("Wrong tag type")
         }
-        
+
         // RG tag does not exist in this record
         assert!(b.get_tag("RG")?.is_none());
-        
+
         drop(x);
-        
+
         let n = b.del_tags(&["xb", "xc"])?;
         assert_eq!(n, 2);
-        
+
         b.del_tag("xd")?;
-        
+
         let t = b.aux_tags().next().unwrap()?;
         assert_eq!(t.id()?, "xa");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tag_display() -> Result<(), SamError> {
+        let mut hdr = make_header()?;
+
+        let mut p = SamParser::new();
+        let mut b = BamRec::new();
+
+        p.parse(
+            &mut b,
+            &mut hdr,
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:B:f,1.5,7.0e-2,6,8.2\tRG:Z:ReadGroup2\txb:i:-675",
+        )?;
+
+        let mut it = b.aux_tags();
+
+        let tag = it.next().unwrap()?;
+        let s = format!("{tag}");
+        assert_eq!(&s, "xa:B:f,1.5,0.07,6,8.2");
+
+        let tag = it.next().unwrap()?;
+        let s = format!("{tag}");
+        assert_eq!(&s, "RG:Z:ReadGroup2");
         
+        let tag = it.next().unwrap()?;
+        let s = format!("{tag}");
+        assert_eq!(&s, "xb:i:-675");
         Ok(())
     }
 }

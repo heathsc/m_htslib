@@ -288,7 +288,7 @@ impl BamRec {
 
     fn parse_z_tag(&mut self, s: &[u8]) -> Result<(), AuxError> {
         if s.iter().any(|c| !(b' '..=b'~').contains(c)) {
-            Err(AuxError::IllegalZCharacters)
+            Err(AuxError::IllegalCharacters)
         } else {
             self.push_z_h_tag(b'Z', s);
             Ok(())

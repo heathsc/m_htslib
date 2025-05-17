@@ -34,8 +34,8 @@ pub enum AuxError {
     IntegerOutOfRange,
     #[error("Hex digits does not have an even number of digits")]
     OddHexDigits,
-    #[error("Illegal characters in Z aux tag")]
-    IllegalZCharacters,
+    #[error("Illegal characters in Z or A aux tag")]
+    IllegalCharacters,
     #[error("Non hex digits in H aux tag")]
     IllegalHexCharacters,
     #[error("Unknown aux tag type '{0}'")]

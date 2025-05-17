@@ -127,7 +127,7 @@ impl KString {
 
     pub fn putsn(&mut self, p: &[u8]) -> Result<(), KStringError> {
         if !p.is_empty() {
-            if p.iter().any(|c| *c == 0) {
+            if p.contains(&0) {
                 return Err(KStringError::InternalNullInSlice);
             }
             let l = p.len();
