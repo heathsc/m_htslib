@@ -358,11 +358,11 @@ impl HtsIdx<'_> {
     ///
     /// `fname` - BAM/BCF/etc filename, to which .bai/.csi/.tbi will be added or the extension
     /// substituted, to search for an existing index file. In case of a non-standard naming, the file
-    /// name can include the name of the index file delimited with [HTS_IDX_DELIM].
+    /// name can include the name of the index file delimited with [crate::hts::HTS_IDX_DELIM].
     ///
     /// `fmt`- Desired format. Note that only Bai | Csi | Tbi are valid
     ///
-    /// If `fname` contains the string "##idx##" ([HTS_IDX_DELIM]), the part before the delimiter will be
+    /// If `fname` contains the string "##idx##" ([crate::hts::HTS_IDX_DELIM]), the part before the delimiter will be
     /// used as the name of the data file and the part after it will be used as the name of the index.
     /// Otherwise, this function tries to work out the index name as follows:
     ///
@@ -411,8 +411,8 @@ impl HtsIdx<'_> {
     ///
     /// `flags` - Flags to alter behaviour (see description)
     ///
-    /// If `idx_name` is [NONE], the index name will be derived from `fname` in the same way
-    /// as [HtxIdx::load()].
+    /// If `idx_name` is [None], the index name will be derived from `fname` in the same way
+    /// as [HtsIdx::load()].
     ///
     /// The `flags` parameter can be set to a combination of the following values:
     ///

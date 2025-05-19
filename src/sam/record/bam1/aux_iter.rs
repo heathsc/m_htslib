@@ -610,6 +610,10 @@ mod tests {
         let tag = it.next().unwrap()?;
         let s = format!("{tag}");
         assert_eq!(&s, "xb:i:-675");
+        
+        eprintln!("OOOOK! {:?}", tag);
+        
+        panic!("OOOK!");
         Ok(())
     }
 }

@@ -137,6 +137,8 @@ pub enum Whence {
     End = libc::SEEK_END as isize,
 }
 
+pub const HTS_IDX_DELIM: &str = "##idx##";
+
 /// Not sure if I will use this, but if I do it won't be exposed to the public API
 #[allow(dead_code)]
 pub(crate) type HtsName2Id = unsafe extern "C" fn(hdr: *mut c_void, str: *const c_char) -> c_int;
