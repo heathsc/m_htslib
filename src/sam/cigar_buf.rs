@@ -119,7 +119,12 @@ impl CigarBuf {
         }
     }
     
-    pub fn parse_str(&mut self, s: &str) -> Result<(), CigarError> {
+    /// # Safety
+    ///
+    /// While the individual cigar elements have been validated, the resulting entire cigar needs validation
+    /// before being stored or used (to check for interior clipping etc.), otherwise this could result in 
+    /// an invalid cigar being stored 
+    pub unsafe fn parse_str_skip_validation(&mut self, s: &str) -> Result<(), CigarError> {
         self.clear();
         let mut s = s;
         while !s.is_empty() {
@@ -127,6 +132,12 @@ impl CigarBuf {
             s = s_new;
             unsafe { self.push_unchecked(elem) }
         }
+        Ok(())
+    }
+    
+    #[inline]
+    pub fn parse_str(&mut self, s: &str) -> Result<(), CigarError> {
+        unsafe { self.parse_str_skip_validation(s)?; }
         valid_elem_slice(self)
     }
 }

@@ -4,6 +4,7 @@ use std::{ffi::CStr, ptr::copy_nonoverlapping};
 mod aux;
 pub mod aux_error;
 pub mod aux_iter;
+pub mod bam_data;
 pub mod bam_type_code;
 pub mod parse;
 mod record_impl;
@@ -103,7 +104,6 @@ impl bam1_t {
             self.l_data = 0;
             self.core = bam1_core_t::default();
         }
-        self.l_data = self.l_data.min(s as c_int);
     }
 
     #[inline]

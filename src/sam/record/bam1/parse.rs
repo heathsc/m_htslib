@@ -51,7 +51,7 @@ impl BamRec {
         if l == 0 {
             Err(SamError::EmptyQueryName)
         } else if l > 254 {
-            Err(SamError::QueryTooLong)
+            Err(SamError::QueryNameTooLong)
         } else {
             self.inner.copy_data(s);
             let l1 = (4 - ((l + 1) & 3)) & 3;

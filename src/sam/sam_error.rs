@@ -46,14 +46,18 @@ pub enum SamError {
     SetQnameFailed,
     #[error("Error parsing Sam Record")]
     ParseSamRecordFailed,
+    #[error("Bad characters in query name")]
+    IllegalQueryNameChar,
     #[error("Empty query name")]
     EmptyQueryName,
     #[error("Query name too long")]
-    QueryTooLong,
+    QueryNameTooLong,
     #[error("Empty Flag Field")]
     EmptyFlagField,
     #[error("Empty Cigar Field")]
     EmptyCigarField,
+    #[error("Cigar length not a multiple of 4")]
+    CigarLengthNotMul4,
     #[error("Bad Flag Format")]
     BadFlagFormat,
     #[error("Error parsing unsigned int")]

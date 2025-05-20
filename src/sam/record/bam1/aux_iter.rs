@@ -1,4 +1,4 @@
-use std::{ffi::CStr, fmt, iter::FusedIterator, marker::PhantomData};
+use std::{collections::HashSet, ffi::CStr, fmt, iter::FusedIterator, marker::PhantomData};
 
 use super::bam_type_code::BamTypeCode;
 use crate::{AuxError, LeBytes};
@@ -46,6 +46,16 @@ impl BamAuxTag<'_> {
     #[inline]
     pub fn data(&self) -> &[u8] {
         self.data
+    }
+
+    pub fn validate(&self) -> Result<[u8; 2], AuxError> {
+        // Check that we can get the tag id and value.
+        // Throw away the return values and just return the id or any errors
+        let id = self.id()?;
+        self.get_val().map(|_| {
+            let b = id.as_bytes();
+            [b[0], b[1]]
+        })
     }
 }
 
@@ -369,6 +379,17 @@ impl<'a> BamAuxVal<'a> {
     }
 }
 
+pub fn validate_aux_slice(data: &[u8]) -> Result<(), AuxError> {
+    let mut hset = HashSet::new();
+    for v in BamAuxIter::new(data) {
+        let id = v.and_then(|val| val.validate())?;
+        if !hset.insert(id) {
+            return Err(AuxError::DuplicateTagId(id[0] as char, id[1] as char))
+        }
+    }
+    Ok(())
+}
+
 pub struct BamAuxIter<'a> {
     data: &'a [u8],
 }
@@ -466,7 +487,6 @@ mod tests {
             &mut hdr,
             b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:H:1A93AF\txb:H:",
         )?;
-        eprintln!("OOOOK!");
 
         let mut it = b.aux_tags();
 
@@ -606,14 +626,11 @@ mod tests {
         let tag = it.next().unwrap()?;
         let s = format!("{tag}");
         assert_eq!(&s, "RG:Z:ReadGroup2");
-        
+
         let tag = it.next().unwrap()?;
         let s = format!("{tag}");
         assert_eq!(&s, "xb:i:-675");
-        
-        eprintln!("OOOOK! {:?}", tag);
-        
-        panic!("OOOK!");
+
         Ok(())
     }
 }
