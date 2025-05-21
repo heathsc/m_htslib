@@ -40,7 +40,7 @@ impl KHashFunc for *const libc::c_char {
 impl KHashFunc for KString {
     #[inline]
     fn hash(&self) -> u32 {
-        self.as_slice().map(hash_u8_slice).unwrap_or(0)
+        hash_u8_slice(self.as_slice())
     }
 }
 

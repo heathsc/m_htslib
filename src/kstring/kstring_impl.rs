@@ -31,11 +31,7 @@ impl Eq for KString {}
 
 impl fmt::Display for KString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(cs) = self.as_cstr() {
-            write!(f, "{}", cs.to_string_lossy())
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.as_cstr().to_string_lossy())
     }
 }
 
@@ -152,56 +148,34 @@ impl KString {
         Ok(())
     }
 
-    pub fn as_cstr(&self) -> Option<&CStr> {
-        unsafe {
-            self._as_slice(true)
-                .map(|p| CStr::from_bytes_with_nul_unchecked(p))
-        }
+    #[inline]
+    pub fn as_cstr(&self) -> &CStr {
+        unsafe { CStr::from_bytes_with_nul_unchecked(self._as_slice(true)) }
     }
 
-    fn _as_slice(&self, inc_zero: bool) -> Option<&[u8]> {
+    #[inline]
+    fn _as_slice(&self, inc_zero: bool) -> &[u8] {
         if self.s.is_null() {
-            None
+            if inc_zero { &[0] } else { &[] }
         } else {
             let p = self.s as *const u8;
-            Some(unsafe {
-                std::slice::from_raw_parts(p, if inc_zero { self.l + 1 } else { self.l })
-            })
+            unsafe { std::slice::from_raw_parts(p, if inc_zero { self.l + 1 } else { self.l }) }
         }
     }
 
-    fn _as_slice_mut(&mut self, inc_zero: bool) -> Option<&mut [u8]> {
-        if self.s.is_null() {
-            None
-        } else {
-            let p = self.s as *mut u8;
-            Some(unsafe {
-                std::slice::from_raw_parts_mut(p, if inc_zero { self.l + 1 } else { self.l })
-            })
-        }
-    }
-
-    pub fn as_slice(&self) -> Option<&[u8]> {
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
         self._as_slice(false)
     }
 
-    pub fn as_slice_with_null(&self) -> Option<&[u8]> {
+    #[inline]
+    pub fn as_slice_with_null(&self) -> &[u8] {
         self._as_slice(true)
     }
 
-    pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
-        self._as_slice_mut(false)
-    }
-
-    pub fn as_slice_mut_with_null(&mut self) -> Option<&mut [u8]> {
-        self._as_slice_mut(true)
-    }
-
+    #[inline]
     pub fn to_str(&self) -> Result<&str, KStringError> {
-        match self.as_slice() {
-            Some(s) => std::str::from_utf8(s).map_err(KStringError::Utf8Error),
-            None => Ok(""),
-        }
+        std::str::from_utf8(self.as_slice()).map_err(KStringError::Utf8Error)
     }
 }
 
@@ -228,7 +202,7 @@ mod tests {
         ks.putc(b'e').unwrap();
         ks.putc(b'l').unwrap();
         assert_eq!(ks.len(), 3);
-        let s = ks.as_slice().unwrap();
+        let s = ks.as_slice();
         assert_eq!(s, b"Hel");
     }
 
@@ -241,7 +215,7 @@ mod tests {
 
         ks.putsn(", and goodbye".as_bytes()).unwrap();
         assert_eq!(ks.len(), 24);
-        assert_eq!(ks.as_cstr().unwrap(), c"Hello World, and goodbye");
+        assert_eq!(ks.as_cstr(), c"Hello World, and goodbye");
     }
 
     #[test]
@@ -249,6 +223,6 @@ mod tests {
         let mut ks = KString::new();
         let x = 42;
         write!(ks, "Hello World. The number is {x}").unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"Hello World. The number is 42");
+        assert_eq!(ks.as_cstr(), c"Hello World. The number is 42");
     }
 }

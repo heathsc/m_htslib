@@ -101,12 +101,8 @@ impl BamRec {
     }
 
     pub(super) fn make_data_slice(&self, off: usize, sz: usize) -> &[u8] {
-        assert!(off <= self.inner.l_data as usize, "Bam data corrupt");
-        if self.inner.data.is_null() || sz == 0 {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(self.inner.data.add(off) as *const u8, sz) }
-        }
+        assert!(off + sz <= self.inner.l_data as usize, "Bam data corrupt");
+        unsafe { super::make_data_slice(self.inner.data as *const u8, off, sz) }
     }
 
     fn seq_slice(&self) -> &[u8] {

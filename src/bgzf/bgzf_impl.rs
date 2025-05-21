@@ -602,12 +602,12 @@ mod tests {
         assert_eq!(b.getc().unwrap(), b'1');
         let mut ks = KString::new();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"22333444455555");
+        assert_eq!(ks.as_cstr(), c"22333444455555");
 
         let mut b = Bgzf::open(c"test/gzip.test.gz", c"r").unwrap();
         assert_eq!(b.compression(), BgzfCompression::Gzip);
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"122333444455555");
+        assert_eq!(ks.as_cstr(), c"122333444455555");
 
         let mut b = Bgzf::open(c"test/bgziptest.txt", c"r").unwrap();
         assert_eq!(b.compression(), BgzfCompression::None);
@@ -622,13 +622,13 @@ mod tests {
         let fp = HFile::open(c"test/bgziptest.txt.gz", c"r").unwrap();
         let mut b = Bgzf::hopen(fp, c"r").unwrap();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"122333444455555");
+        assert_eq!(ks.as_cstr(), c"122333444455555");
 
         let fd = unsafe { libc::open(c"test/bgziptest.txt.gz".as_ptr(), libc::O_RDONLY) };
         assert!(fd > 0);
         let mut b = Bgzf::dopen(fd, c"r").unwrap();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"122333444455555");
+        assert_eq!(ks.as_cstr(), c"122333444455555");
     }
 
     #[test]
@@ -644,9 +644,9 @@ mod tests {
         assert_eq!(b.compression(), BgzfCompression::Bgzip);
         let mut ks = KString::new();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"This is a test");
+        assert_eq!(ks.as_cstr(), c"This is a test");
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"Second line");
+        assert_eq!(ks.as_cstr(), c"Second line");
         assert_eq!(b.get_line(10, &mut ks), Err(BgzfError::EOF));
     }
 
@@ -658,7 +658,7 @@ mod tests {
         b.useek(5).unwrap();
         let mut ks = KString::new();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"3444455555");
+        assert_eq!(ks.as_cstr(), c"3444455555");
     }
 
     #[test]
@@ -676,6 +676,6 @@ mod tests {
         b.useek(15).unwrap();
         let mut ks = KString::new();
         b.get_line(10, &mut ks).unwrap();
-        assert_eq!(ks.as_cstr().unwrap(), c"Second line");
+        assert_eq!(ks.as_cstr(), c"Second line");
     }
 }

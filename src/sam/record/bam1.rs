@@ -155,3 +155,12 @@ impl bam1_t {
         }
     }
 }
+
+#[inline]
+unsafe fn make_data_slice<'a>(p: *const u8, off: usize, sz: usize) -> &'a [u8] {
+    if p.is_null() || sz == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(p.add(off), sz) }
+    }
+}

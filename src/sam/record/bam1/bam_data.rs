@@ -8,7 +8,7 @@ use libc::{c_int, c_void, realloc};
 
 use crate::{
     SamError,
-    sam::{CigarElem, cigar_validate::valid_elem_slice},
+    sam::{CigarElem, cigar, cigar_validate::valid_elem_slice},
 };
 
 const ZEROS: [u8; 3] = [0, 0, 0];
@@ -68,11 +68,7 @@ impl BamData {
 
     #[inline]
     fn get_data_slice(&self) -> &[u8] {
-        if self.data.is_null() {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(self.data, self.state.data_used as usize) }
-        }
+        unsafe { super::make_data_slice(self.data, 0, self.state.data_used as usize) }
     }
 
     #[inline]
@@ -102,7 +98,7 @@ impl BamData {
                     BDStage::Seq
                 }
                 BDStage::Seq => {
-                    self.set_seq();
+                    self.check_seq()?;
                     BDStage::Qual
                 }
                 BDStage::Qual => {
@@ -128,11 +124,27 @@ impl BamData {
         Ok(())
     }
 
-    fn set_seq(&mut self) {
+    fn check_seq(&mut self) -> Result<(), SamError> {
         let off = self.state.seq_offset();
-        let s = &self.get_data_slice()[off..];
-        assert!(s.len() <= i32::MAX as usize);
-        self.state.seq_len = s.len() as i32;
+        let s = self.get_data_slice();
+        let seq = &s[off..];
+        assert!(seq.len() <= i32::MAX as usize);
+
+        // We can't get the exact equence length from the input because of the packing which means the LSB is unknown,
+        // so we get the expected sequence length from the cigar.
+        let cigar_elem =
+            self.get_elem_slice(self.state.cigar_offset(), self.state.n_cigar_elem as usize);
+        let cigar = unsafe { cigar::from_elems_unchecked(cigar_elem) };
+        let seq_len = cigar.query_len() as usize;
+        
+        // Check if sequence length is comparitble with cigar
+        // Note that sequence is packed 2 bases per byte
+        if (seq_len + 1) >> 1 != seq.len() {
+            Err(SamError::SeqCigarMismatch)
+        } else {
+            self.state.seq_len = seq_len as i32;
+            Ok(())
+        }
     }
 
     fn check_qual(&mut self) -> Result<(), SamError> {
@@ -145,31 +157,41 @@ impl BamData {
         }
     }
 
+    fn get_elem_slice(&self, off: usize, l: usize) -> &[CigarElem] {
+        if self.data.is_null() || l == 0 {
+            &[]
+        } else {
+            unsafe {
+                let ptr = self.data.add(off);
+                assert_eq!(
+                    ptr.align_offset(4),
+                    0,
+                    "Cigar storage not aligned - Bam record corrupt"
+                );
+                std::slice::from_raw_parts(ptr.cast::<CigarElem>(), l)
+            }
+        }
+    }
+
     fn check_cigar(&mut self, skip_validation: bool) -> Result<(), SamError> {
         let off = self.state.cigar_offset();
         let cigar_len = self.state.data_used as usize - off;
         if cigar_len & 3 != 0 {
             Err(SamError::CigarLengthNotMul4)
         } else {
-            if !self.data.is_null() && cigar_len > 0 {
+            self.state.n_cigar_elem = if !self.data.is_null() && cigar_len > 0 {
                 let l = cigar_len >> 2;
                 if l > u32::MAX as usize {
                     return Err(SamError::TooManyCigarElem);
                 }
-                let s = unsafe {
-                    let ptr = self.data.add(off);
-                    assert_eq!(
-                        ptr.align_offset(4),
-                        0,
-                        "Cigar storage not aligned - Bam record corrupt"
-                    );
-                    std::slice::from_raw_parts(ptr.cast::<CigarElem>(), l)
-                };
+                let s = self.get_elem_slice(off, l);
                 if !skip_validation {
                     valid_elem_slice(s)?;
                 }
-                self.state.n_cigar_elem = l as u32;
-            }
+                l as u32
+            } else {
+                0
+            };
             Ok(())
         }
     }
