@@ -3,17 +3,15 @@ use std::{collections::HashSet, str::FromStr};
 use libc::c_int;
 
 use super::{super::BamRec, aux_error::AuxError, aux_iter::BamAuxTag};
-use crate::{LeBytes, sam::BamAuxIter};
-
-
+use crate::{LeBytes, ParseINumError, sam::BamAuxIter};
 
 /// Represnts a block of tag data that is to be deleted.
 /// i is the index of the tag w.r.t to all tags stored in the record
 /// offset is the offset in bytes from the start of the data segment for the bam1_t record
 /// len is the length in bytes of the section to be deleted.
-/// 
+///
 /// If adjacent tags are to be deleted, then the Deletion Blocks are merged. In this case offset is for the
-/// start of the merged block, and i is the index of the *last* tag in the block. 
+/// start of the merged block, and i is the index of the *last* tag in the block.
 struct DeletionBlock {
     i: usize,
     offset: isize,
@@ -96,9 +94,7 @@ impl BamRec {
             if end_off < l_data {
                 let sz = l_data - end_off;
                 let p = self.inner.data;
-                unsafe {
-                    p.offset(off).copy_from(p.offset(end_off), sz as usize)
-                }
+                unsafe { p.offset(off).copy_from(p.offset(end_off), sz as usize) }
             }
             self.inner.l_data -= l as c_int;
             adj += l;
@@ -113,10 +109,7 @@ impl BamRec {
 
     /// Iterate through all tags to find the ones that match, storing the tag data.
     /// If there are multiple tags tso be deleted in adjacent positions then they will be merged.
-    fn find_tags_to_delete(
-        &self,
-        tag_ids: &[&str],
-    ) -> Result<(DeletionBlocks, usize), AuxError> {
+    fn find_tags_to_delete(&self, tag_ids: &[&str]) -> Result<(DeletionBlocks, usize), AuxError> {
         let mut del = DeletionBlocks::new(tag_ids.len());
         let mut n = 0;
         for (i, t) in self.aux_tags().enumerate() {
@@ -242,7 +235,7 @@ impl BamRec {
         let mut overflow = false;
 
         for p in s.split(|c| *c == b',') {
-            let i = std::str::from_utf8(p)?.parse::<i64>()?;
+            let i = parse_i64(p)?;
             min_val = min_val.min(i);
             max_val = max_val.max(i);
             match i.try_into() {
@@ -316,7 +309,7 @@ impl BamRec {
 
     fn parse_integer(&mut self, s: &[u8]) -> Result<(), AuxError> {
         // We pack an integer into the smallest size that can hold it.
-        match std::str::from_utf8(s)?.parse::<i64>()? {
+        match parse_i64(s)? {
             i if i < i32::MIN as i64 => return Err(AuxError::IntegerOutOfRange),
             i if i < i16::MIN as i64 => self.copy_num(b'i', i as i32),
             i if i < i8::MIN as i64 => self.copy_num(b's', i as i16),
@@ -355,4 +348,14 @@ fn find_best_type(min_val: i64, max_val: i64) -> Result<u8, AuxError> {
     } else {
         Err(AuxError::IntegerOutOfRange)
     }
+}
+
+pub(super) fn parse_i64(s: &[u8]) -> Result<i64, ParseINumError> {
+    crate::int_utils::parse_i64(s).and_then(|(x, t)| {
+        if t.is_empty() {
+            Ok(x)
+        } else {
+            Err(ParseINumError::TrailingGarbage)
+        }
+    })
 }

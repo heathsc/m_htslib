@@ -384,7 +384,7 @@ pub fn validate_aux_slice(data: &[u8], hset: &mut HashSet<[u8; 2]>) -> Result<()
     for v in BamAuxIter::new(data) {
         let id = v.and_then(|val| val.validate())?;
         if !hset.insert(id) {
-            return Err(AuxError::DuplicateTagId(id[0] as char, id[1] as char))
+            return Err(AuxError::DuplicateTagId(id[0] as char, id[1] as char));
         }
     }
     Ok(())
@@ -510,14 +510,14 @@ mod tests {
 
         let mut p = SamParser::new();
         let mut b = BamRec::new();
-
+        
         p.parse(
             &mut b,
             &mut hdr,
             b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:B:c,7782,43,-999,1023,42",
         )?;
         let mut it = b.aux_tags();
-
+        
         let tag = it.next().unwrap()?;
         assert_eq!(tag.id()?, "xa");
         let ret = tag.get_type()?;
@@ -569,14 +569,15 @@ mod tests {
         let mut p = SamParser::new();
         let mut b = BamRec::new();
 
+        eprintln!("OOOK");
+         
         p.parse(
             &mut b,
             &mut hdr,
-            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:i:4\txb:Z:Hi\txc:A:v\txd:B:c,4,8",
+            b"read_id1\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\txa:i:4\txb:Z:Hi\txc:A:v\txd:B:c,41,8",
         )?;
 
         let tag = b.get_tag("xc")?.expect("Did not find xc tag");
-
         assert_eq!(tag.id()?, "xc");
         let ret = tag.get_type()?;
         assert_eq!(ret, (BamAuxTagType::Char, None));

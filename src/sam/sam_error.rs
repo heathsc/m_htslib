@@ -2,7 +2,7 @@ use std::{num::ParseIntError, str::Utf8Error};
 
 use thiserror::Error;
 
-use crate::{AuxError, CigarError, CramError, KStringError};
+use crate::{AuxError, CigarError, CramError, KStringError, ParseINumError};
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum SamError {
@@ -88,4 +88,6 @@ pub enum SamError {
     IllegalUseOfSeqWriter,
     #[error("Can only use cigar_writer when writing Cigar section")]
     IllegalUseOfCigarWriter,
+    #[error("Parse number error: {0}")]
+    INumError(#[from] ParseINumError),
 }

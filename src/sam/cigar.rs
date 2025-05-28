@@ -6,6 +6,8 @@ use std::{
     str::FromStr,
 };
 
+use crate::ParseINumError;
+
 use super::{cigar_buf::CigarBuf, cigar_error::CigarError, cigar_validate::valid_elem_slice};
 
 #[repr(u8)]
@@ -301,22 +303,8 @@ where
 
 const MAX_OP_LEN: u32 = (1 << 28) - 1;
 
-fn parse_op_len(s: &[u8]) -> Result<(u32, &[u8]), CigarError> {
-    let mut x = 0;
-    for (i, c) in s.iter().enumerate() {
-        if c.is_ascii_digit() {
-            let y = (c - b'0') as u32;
-            if x > MAX_OP_LEN / 10 - y {
-                return Err(CigarError::CigarOpLenOverflow);
-            }
-            x = x * 10 + y
-        } else if i > 0 {
-            return Ok((x, &s[i..]));
-        } else {
-            return Err(CigarError::MissingOpLen);
-        }
-    }
-    Ok((x, &[]))
+fn parse_op_len(s: &[u8]) -> Result<(u32, &[u8]), ParseINumError> {
+    crate::int_utils::parse_u32(s, MAX_OP_LEN)
 }
 
 #[cfg(test)]

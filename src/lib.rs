@@ -3,15 +3,16 @@ extern crate log;
 
 use std::ffi::CStr;
 
+pub mod base;
 pub mod bgzf;
 pub mod cram;
 pub mod error;
 pub mod hts;
+pub(crate) mod int_utils;
 pub mod khash;
 pub mod kstring;
-pub mod sam;
 pub mod le_bytes;
-pub mod base;
+pub mod sam;
 
 pub use error::*;
 pub use le_bytes::LeBytes;
@@ -36,17 +37,3 @@ fn cstr_len(c: &CStr) -> usize {
 fn roundup(x: usize) -> usize {
     x.checked_next_power_of_two().unwrap_or(usize::MAX)
 }
-
-/*
-#[inline]
-fn from_cstr(c: *const libc::c_char) -> Result<&str, HtsError> {
-    if c.is_null() {
-        Err(HtsError::CStringNull)
-    } else {
-        unsafe { CStr::from_ptr(c) }
-            .to_str()
-            .map_err(|_| HtsError::CStringNotUTF8)
-    }
-}
-
- */

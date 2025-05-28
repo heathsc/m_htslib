@@ -1,4 +1,6 @@
 use thiserror::Error;
+
+use crate::ParseINumError;
 use super::cigar::CigarElem;
 
 #[derive(Error, Debug, Eq, PartialEq)]
@@ -29,6 +31,8 @@ pub enum CigarError {
     CigarOpLenOverflow,
     #[error("CIGAR missing op length")]
     MissingOpLen,
+    #[error("Parse number error: {0}")]
+    INumError(#[from] ParseINumError),
 }
 
 #[derive(Error, Debug)]

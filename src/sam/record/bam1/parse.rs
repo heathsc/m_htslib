@@ -4,7 +4,7 @@ use libc::{c_char, c_int};
 
 use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
 use crate::{
-    SamError,
+    ParseINumError, SamError,
     base::Base,
     hts::HtsPos,
     kstring::KString,
@@ -23,7 +23,7 @@ impl BamRec {
         self.inner.l_data = 0;
         self.inner.core = bam1_core_t::default();
         hash.clear();
-        
+
         for (ix, s) in p.split(|c| *c == b'\t').enumerate() {
             match ix {
                 0 => self.parse_qname(s)?,
@@ -34,7 +34,7 @@ impl BamRec {
                 5 => self.parse_cigar(s, cb)?,
                 6 => self.parse_mate_contig(s, hdr, ks)?,
                 7 => self.parse_mpos(s)?,
-                8 => self.inner.core.isze = std::str::from_utf8(s)?.parse::<HtsPos>()?,
+                8 => self.inner.core.isze = super::aux::parse_i64(s).map(|x| x as HtsPos)?,
                 9 => self.parse_seq(s)?,
                 10 => self.parse_qual(s)?,
                 _ => self.parse_aux_tag(s, hash)?,
@@ -274,7 +274,7 @@ fn parse_sam_flag(s: &[u8]) -> Result<u16, SamError> {
 }
 
 #[inline]
-fn bytes_to_htspos(s: &[u8], mut tid: i32) -> Result<(HtsPos, i32), SamError> {
+fn bytes_to_htspos(s: &[u8], mut tid: i32) -> Result<(HtsPos, i32), ParseINumError> {
     bytes_to_uint(s, (1u64 << 62) - 1).map(|x| {
         let pos = x as HtsPos - 1;
         if pos < 0 && tid >= 0 {
@@ -285,13 +285,15 @@ fn bytes_to_htspos(s: &[u8], mut tid: i32) -> Result<(HtsPos, i32), SamError> {
     })
 }
 
-fn bytes_to_uint(s: &[u8], max: u64) -> Result<u64, SamError> {
-    let x = std::str::from_utf8(s)?.parse::<u64>()?;
-    if x > max {
-        Err(SamError::ErrorParsingUint)
-    } else {
-        Ok(x)
-    }
+#[inline]
+fn bytes_to_uint(s: &[u8], max: u64) -> Result<u64, ParseINumError> {
+    crate::int_utils::parse_u64(s, max).and_then(|(x, t)| {
+        if t.is_empty() {
+            Ok(x)
+        } else {
+            Err(ParseINumError::TrailingGarbage)
+        }
+    })
 }
 
 #[derive(Default)]

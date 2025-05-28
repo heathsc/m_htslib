@@ -2,6 +2,8 @@ use std::{ffi::FromBytesWithNulError, num::{ParseFloatError, ParseIntError}, str
 
 use thiserror::Error;
 
+use crate::ParseINumError;
+
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum AuxError {
     #[error("Internal Error")]
@@ -48,4 +50,6 @@ pub enum AuxError {
     IntegerTooSmall(u8),
     #[error("Parse Float Error")]
     FloatError,
+    #[error("Parse number error: {0}")]
+    INumError(#[from] ParseINumError),
 }
