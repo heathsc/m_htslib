@@ -379,8 +379,8 @@ impl<'a> BamAuxVal<'a> {
     }
 }
 
-pub fn validate_aux_slice(data: &[u8]) -> Result<(), AuxError> {
-    let mut hset = HashSet::new();
+pub fn validate_aux_slice(data: &[u8], hset: &mut HashSet<[u8; 2]>) -> Result<(), AuxError> {
+    hset.clear();
     for v in BamAuxIter::new(data) {
         let id = v.and_then(|val| val.validate())?;
         if !hset.insert(id) {

@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use crate::{
     SamError,
     hts::HtsPos,
-    sam::{BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter, cigar},
+    sam::{BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter},
 };
 
 use libc::c_int;
@@ -52,7 +52,7 @@ impl BamRec {
                 );
                 std::slice::from_raw_parts(ptr.cast::<CigarElem>(), len)
             };
-            Some(unsafe { cigar::from_elems_unchecked(slice) })
+            Some(unsafe { Cigar::from_elems_unchecked(slice) })
         } else {
             None
         }

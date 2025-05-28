@@ -1,5 +1,5 @@
 use super::{
-    cigar::{self, cigar_len, Cigar, CigarElem},
+    cigar::{cigar_len, Cigar, CigarElem},
     cigar_error::{CigarError, CigarTrimError},
     cigar_validate::valid_elem_slice,
 };
@@ -21,7 +21,7 @@ impl Deref for CigarBuf {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { cigar::from_elems_unchecked(&self.vec) }
+        unsafe { Cigar::from_elems_unchecked(&self.vec) }
     }
 }
 

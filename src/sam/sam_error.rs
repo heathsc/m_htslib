@@ -76,4 +76,16 @@ pub enum SamError {
     SeqCigarMismatch,
     #[error("Mismatch between quality and sequence length")]
     SeqQualMismatch,
+    #[error("Sequence length not set")]
+    SeqLenNotSet,
+    #[error("Sequence length mismatch")]
+    SeqLenMismatch,
+    #[error("Qual length does not match expectations")]
+    UnexpectedQualLen,
+    #[error("Not all mandatory fields are present in Bam record data segment")]
+    IncompleteDataSegment,
+    #[error("Can only use seq_writer when writing Seq section")]
+    IllegalUseOfSeqWriter,
+    #[error("Can only use cigar_writer when writing Cigar section")]
+    IllegalUseOfCigarWriter,
 }

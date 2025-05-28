@@ -1,7 +1,7 @@
 pub mod bam1;
 
-use bam1::*;
 pub use bam1::parse::SamParser;
+use bam1::*;
 
 /// Wrapper around the htslib struct bam1_t.
 /// All non library rust code should work with BamRec rather than

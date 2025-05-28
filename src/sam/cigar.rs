@@ -115,8 +115,13 @@ impl CigarElem {
     pub fn op_type1(&self) -> u32 {
         (CIGAR_TYPE1 >> ((self.0 & 15) << 1)) & 3
     }
+    
+    #[inline]
+    pub fn to_le_bytes(&self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
 
-    pub(super) fn parse(s: &str) -> Result<(Self, &str), CigarError> {
+    pub fn parse(s: &str) -> Result<(Self, &str), CigarError> {
         if let Some(i) = s.find(|c| !char::is_digit(c, 10)) {
             if i > 0 {
                 let (s1, s2) = s.split_at(i);
@@ -189,35 +194,37 @@ impl Cigar {
     pub fn as_elems_mut(&mut self) -> &mut [CigarElem] {
         &mut self.0
     }
+    
+    /// Convert from CigarElem slice to &Cigar
+    ///
+    /// # Safety
+    ///   The caller must guarantee that the slice v forms a valid Cigar
+    #[inline]
+    pub const unsafe fn from_elems_unchecked(v: &[CigarElem]) -> &Self {
+        unsafe { transmute(v) }
+    }
+    
+    /// Convert from mutable CigarElem slice to &mut Cigar
+    ///
+    /// # Safety
+    ///   The caller must guarantee that the slice v forms a valid Cigar
+    #[inline]
+    pub unsafe fn from_elems_unchecked_mut(v: &mut [CigarElem]) -> &mut Self {
+        unsafe { &mut *(v as *mut [CigarElem] as *mut Cigar) }
+    }
+    
+    #[inline]
+    pub fn from_elems(v: &[CigarElem]) -> Result<&Self, CigarError> {
+        valid_elem_slice(v).map(|_| unsafe { Self::from_elems_unchecked(v) })
+    }
+    
+    #[inline]
+    pub fn from_elems_mut(v: &mut [CigarElem]) -> Result<&mut Self, CigarError> {
+        valid_elem_slice(v).map(|_| unsafe { Self::from_elems_unchecked_mut(v) })
+    }
+
 }
 
-/// Convert from CigarElem slice to &Cigar
-///
-/// # Safety
-///   The caller must guarantee that the slice v forms a valid Cigar
-#[inline]
-pub const unsafe fn from_elems_unchecked(v: &[CigarElem]) -> &Cigar {
-    unsafe { transmute(v) }
-}
-
-/// Convert from mutable CigarElem slice to &mut Cigar
-///
-/// # Safety
-///   The caller must guarantee that the slice v forms a valid Cigar
-#[inline]
-pub unsafe fn from_elems_unchecked_mut(v: &mut [CigarElem]) -> &mut Cigar {
-    unsafe { &mut *(v as *mut [CigarElem] as *mut Cigar) }
-}
-
-#[inline]
-pub fn from_elems(v: &[CigarElem]) -> Result<&Cigar, CigarError> {
-    valid_elem_slice(v).map(|_| unsafe { from_elems_unchecked(v) })
-}
-
-#[inline]
-pub fn from_elems_mut(v: &mut [CigarElem]) -> Result<&mut Cigar, CigarError> {
-    valid_elem_slice(v).map(|_| unsafe { from_elems_unchecked_mut(v) })
-}
 
 impl AsRef<Cigar> for Cigar {
     #[inline]

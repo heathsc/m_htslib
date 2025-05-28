@@ -2,20 +2,15 @@ use std::{
     ffi::CStr,
     fmt,
     io::{self, Write},
+    marker::PhantomData,
     ptr,
     str::FromStr,
 };
 
+use super::KString;
+
 use crate::error::KStringError;
 use libc::{c_char, c_void, size_t};
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct KString {
-    l: size_t,
-    m: size_t,
-    s: *mut c_char,
-}
 
 impl PartialEq for KString {
     fn eq(&self, other: &Self) -> bool {
@@ -43,6 +38,7 @@ impl Default for KString {
             l: 0,
             m: 0,
             s: ptr::null_mut(),
+            marker: PhantomData,
         }
     }
 }
@@ -61,12 +57,14 @@ unsafe impl Sync for KString {}
 impl Write for KString {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.putsn(buf).map_err(io::Error::other).map(|_| buf.len())
+        self.putsn(buf);
+        Ok(buf.len())
     }
 
     #[inline]
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.putsn(buf).map_err(io::Error::other)
+        self.putsn(buf);
+        Ok(())
     }
 
     #[inline]
@@ -92,7 +90,14 @@ impl KString {
         self.l = 0
     }
 
-    pub fn resize(&mut self, size: size_t) -> Result<(), KStringError> {
+    pub fn truncate(&mut self, l: usize) {
+        let l = l as size_t;
+        if l < self.l {
+            self.l = l
+        }
+    }
+
+    pub fn resize(&mut self, size: size_t) {
         if self.m < size {
             let size = crate::roundup(size);
             let p = if self.s.is_null() {
@@ -102,32 +107,26 @@ impl KString {
             }
             .cast::<c_char>();
 
-            if p.is_null() {
-                return Err(KStringError::OutOfMemory);
-            } else {
-                self.s = p;
-                self.m = size;
-                unsafe { *p.add(self.l) = 0 }
-            }
+            assert!(!p.is_null(), "KString: Out of memory");
+
+            self.s = p;
+            self.m = size;
+            unsafe { *p.add(self.l) = 0 }
         }
-        Ok(())
     }
 
-    pub fn expand(&mut self, extra: usize) -> Result<(), KStringError> {
+    pub fn expand(&mut self, extra: usize) {
         if let Some(new_size) = self.l.checked_add(extra) {
             self.resize(new_size)
         } else {
-            Err(KStringError::SizeRequestTooLarge)
+            panic!("KString resize too large")
         }
     }
 
-    pub fn putsn(&mut self, p: &[u8]) -> Result<(), KStringError> {
+    pub fn putsn(&mut self, p: &[u8]) {
         if !p.is_empty() {
-            if p.contains(&0) {
-                return Err(KStringError::InternalNullInSlice);
-            }
             let l = p.len();
-            self.expand(l + 2)?;
+            self.expand(l + 2);
             unsafe {
                 let ptr = self.s.add(self.l);
                 libc::memcpy(ptr as *mut c_void, p.as_ptr() as *const c_void, l);
@@ -135,11 +134,10 @@ impl KString {
                 *(ptr.add(l)) = 0;
             }
         }
-        Ok(())
     }
 
     pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
-        self.expand(2)?;
+        self.expand(2);
         unsafe {
             *self.s.add(self.l) = c as c_char;
             *self.s.add(self.l + 1) = 0;
@@ -177,6 +175,16 @@ impl KString {
     pub fn to_str(&self) -> Result<&str, KStringError> {
         std::str::from_utf8(self.as_slice()).map_err(KStringError::Utf8Error)
     }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *const u8 {
+        self.s as *const u8
+    }
+
+    #[inline]
+    pub fn as_ptr_mut(&mut self) -> *mut u8 {
+        self.s as *mut u8
+    }
 }
 
 impl FromStr for KString {
@@ -184,7 +192,7 @@ impl FromStr for KString {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut ks = Self::default();
-        ks.putsn(s.as_bytes())?;
+        ks.putsn(s.as_bytes());
         Ok(ks)
     }
 }
@@ -210,10 +218,10 @@ mod tests {
     fn construction2() {
         let s = "Hello World".as_bytes();
         let mut ks = KString::new();
-        ks.putsn(s).unwrap();
+        ks.putsn(s);
         assert_eq!(ks.len(), 11);
 
-        ks.putsn(", and goodbye".as_bytes()).unwrap();
+        ks.putsn(", and goodbye".as_bytes());
         assert_eq!(ks.len(), 24);
         assert_eq!(ks.as_cstr(), c"Hello World, and goodbye");
     }

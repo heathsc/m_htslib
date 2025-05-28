@@ -102,7 +102,7 @@ impl SeqComplement for BaseQual {
     }
 }
 
-const BASE_TABLE: &[u8; 16] = b"-ACMGRSVTWYHKDBN";
+const BASE_TABLE: &[u8; 16] = b"=ACMGRSVTWYHKDBN";
 
 const SEQ_NT16_TABLE: [u8; 256] = [
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
