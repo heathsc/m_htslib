@@ -53,8 +53,7 @@ mod tests {
         {
             let mut w = bd.writer(BDSection::Cigar).cigar_writer().unwrap();
             let mut cb = CigarBuf::new();
-            cb.parse("1S14M").unwrap();
-            w.write_elems(cb.as_elems()).unwrap();
+            w.write_cigar(b"1S14M").unwrap();
         }
         
         eprintln!("Getting writer for Seq");
@@ -70,6 +69,5 @@ mod tests {
         }
         
         bd.validate().expect("Validation error");
-        panic!("OOOOK!");
     }
 }

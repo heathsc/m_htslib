@@ -136,4 +136,14 @@ impl BDCigarWriter<'_> {
         }
         Ok(())
     }
+    
+    pub fn write_cigar(mut self, mut s: &[u8]) -> Result<(), SamError> {
+        let ks = self.inner.ks();
+        while !s.is_empty() {
+            let (e, t) = CigarElem::parse(s)?;
+            ks.putsn(&e.to_le_bytes());
+            s = t;
+        }
+        Ok(())
+    }
 }

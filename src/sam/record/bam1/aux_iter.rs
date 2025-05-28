@@ -568,8 +568,6 @@ mod tests {
 
         let mut p = SamParser::new();
         let mut b = BamRec::new();
-
-        eprintln!("OOOK");
          
         p.parse(
             &mut b,

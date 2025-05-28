@@ -104,7 +104,6 @@ impl BamData {
     }
 
     fn get_test_seq_len(&self, size: Option<usize>, seq_empty: bool) -> Result<usize, SamError> {
-        eprintln!("EEEEK {:?} {} {:?}", size, seq_empty, self.get_cigar_qlen());
         match (size, self.get_qual_len(), self.get_cigar_qlen()) {
             // We have a non zero length from both the Cigar and Qual fields and they are not equal
             // This shouldn't happen as it should have been caught before
@@ -125,13 +124,6 @@ impl BamData {
     }
 
     fn get_test_qual_len(&self, size: Option<usize>, qlen: usize) -> Result<usize, SamError> {
-        eprintln!(
-            "ACK {:?} {qlen} {:?} {:?} {}",
-            size,
-            self.get_seq_len(),
-            self.get_cigar_qlen(),
-            self.state.seq_len,
-        );
         match (size, self.get_seq_len(), self.get_cigar_qlen()) {
             // We have a non zero length from both the Cigar and Seq fields and they are not equal
             // This shouldn't happen as it should have been caught before
@@ -160,16 +152,12 @@ impl BamData {
         let n_bytes = self.get_data_len(tmp_data).checked_sub(off).unwrap();
         assert!(n_bytes <= i32::MAX as usize);
 
-        eprintln!("OOOOK! {n_bytes} {:?}", size);
-
         if n_bytes == 0 {
             self.state.seq_len = 0;
             Ok(())
         } else {
             let r = self.get_test_seq_len(size, n_bytes == 0);
-            eprintln!("Aha! {:?}", r);
             let seq_len = r?;
-            eprintln!("seq_len = {seq_len}");
             
             // Check the number of bytes is consistent with the expected number of bases
             if n_bytes != (seq_len + 1) >> 1 {
