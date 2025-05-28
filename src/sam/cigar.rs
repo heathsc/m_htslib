@@ -42,19 +42,10 @@ impl fmt::Display for CigarOp {
 impl FromStr for CigarOp {
     type Err = CigarError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "M" => Ok(CigarOp::Match),
-            "I" => Ok(CigarOp::Ins),
-            "D" => Ok(CigarOp::Del),
-            "N" => Ok(CigarOp::RefSkip),
-            "S" => Ok(CigarOp::SoftClip),
-            "H" => Ok(CigarOp::HardClip),
-            "P" => Ok(CigarOp::Pad),
-            "=" => Ok(CigarOp::Equal),
-            "X" => Ok(CigarOp::Diff),
-            "B" => Ok(CigarOp::Back),
-            "O" => Ok(CigarOp::Overlap),
-            _ => Err(CigarError::UnknownOperator),
+        if s.len() == 1 {
+            Self::from_u8(s.as_bytes()[0])
+        } else {
+            Err(CigarError::UnknownOperator)
         }
     }
 }
@@ -62,6 +53,23 @@ impl FromStr for CigarOp {
 impl CigarOp {
     pub fn is_valid(&self) -> bool {
         *self < Self::Invalid1
+    }
+
+    pub fn from_u8(c: u8) -> Result<Self, CigarError> {
+        match c {
+            b'M' => Ok(CigarOp::Match),
+            b'I' => Ok(CigarOp::Ins),
+            b'D' => Ok(CigarOp::Del),
+            b'N' => Ok(CigarOp::RefSkip),
+            b'S' => Ok(CigarOp::SoftClip),
+            b'H' => Ok(CigarOp::HardClip),
+            b'P' => Ok(CigarOp::Pad),
+            b'+' => Ok(CigarOp::Equal),
+            b'X' => Ok(CigarOp::Diff),
+            b'B' => Ok(CigarOp::Back),
+            b'O' => Ok(CigarOp::Overlap),
+            _ => Err(CigarError::UnknownOperator),
+        }
     }
 }
 
@@ -115,33 +123,19 @@ impl CigarElem {
     pub fn op_type1(&self) -> u32 {
         (CIGAR_TYPE1 >> ((self.0 & 15) << 1)) & 3
     }
-    
+
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
 
-    pub fn parse(s: &str) -> Result<(Self, &str), CigarError> {
-        if let Some(i) = s.find(|c| !char::is_digit(c, 10)) {
-            if i > 0 {
-                let (s1, s2) = s.split_at(i);
-                let (s2, s3) = s2.split_at(1);
-                match (s1.parse::<u32>(), s2.parse::<CigarOp>()) {
-                    (Ok(l), Ok(op)) => {
-                        if l < (1 << 28) {
-                            Ok((unsafe { Self::from_parts_unchecked(op, l) }, s3))
-                        } else {
-                            Err(CigarError::BadLength)
-                        }
-                    }
-                    (Err(_), _) => Err(CigarError::BadLength),
-                    (_, Err(e)) => Err(e),
-                }
-            } else {
-                Err(CigarError::MissingLength)
-            }
-        } else {
+    pub fn parse(s: &[u8]) -> Result<(Self, &[u8]), CigarError> {
+        let (l, s1) = parse_op_len(s)?;
+        if s1.is_empty() {
             Err(CigarError::MissingOperator)
+        } else {
+            let op = CigarOp::from_u8(s1[0])?;
+            Ok((unsafe { Self::from_parts_unchecked(op, l) }, &s1[1..]))
         }
     }
     /// # Safety
@@ -174,8 +168,8 @@ impl FromStr for CigarElem {
     type Err = CigarError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match Self::parse(s) {
-            Ok((elem, "")) => Ok(elem),
+        match Self::parse(s.as_bytes()) {
+            Ok((elem, &[])) => Ok(elem),
             Ok((_, _)) => Err(CigarError::TrailingGarbage),
             Err(e) => Err(e),
         }
@@ -194,7 +188,7 @@ impl Cigar {
     pub fn as_elems_mut(&mut self) -> &mut [CigarElem] {
         &mut self.0
     }
-    
+
     /// Convert from CigarElem slice to &Cigar
     ///
     /// # Safety
@@ -203,7 +197,7 @@ impl Cigar {
     pub const unsafe fn from_elems_unchecked(v: &[CigarElem]) -> &Self {
         unsafe { transmute(v) }
     }
-    
+
     /// Convert from mutable CigarElem slice to &mut Cigar
     ///
     /// # Safety
@@ -212,19 +206,17 @@ impl Cigar {
     pub unsafe fn from_elems_unchecked_mut(v: &mut [CigarElem]) -> &mut Self {
         unsafe { &mut *(v as *mut [CigarElem] as *mut Cigar) }
     }
-    
+
     #[inline]
     pub fn from_elems(v: &[CigarElem]) -> Result<&Self, CigarError> {
         valid_elem_slice(v).map(|_| unsafe { Self::from_elems_unchecked(v) })
     }
-    
+
     #[inline]
     pub fn from_elems_mut(v: &mut [CigarElem]) -> Result<&mut Self, CigarError> {
         valid_elem_slice(v).map(|_| unsafe { Self::from_elems_unchecked_mut(v) })
     }
-
 }
-
 
 impl AsRef<Cigar> for Cigar {
     #[inline]
@@ -305,6 +297,26 @@ where
         l += c.op_len();
         l
     })
+}
+
+const MAX_OP_LEN: u32 = (1 << 28) - 1;
+
+fn parse_op_len(s: &[u8]) -> Result<(u32, &[u8]), CigarError> {
+    let mut x = 0;
+    for (i, c) in s.iter().enumerate() {
+        if c.is_ascii_digit() {
+            let y = (c - b'0') as u32;
+            if x > MAX_OP_LEN / 10 - y {
+                return Err(CigarError::CigarOpLenOverflow);
+            }
+            x = x * 10 + y
+        } else if i > 0 {
+            return Ok((x, &s[i..]));
+        } else {
+            return Err(CigarError::MissingOpLen);
+        }
+    }
+    Ok((x, &[]))
 }
 
 #[cfg(test)]

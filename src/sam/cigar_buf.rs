@@ -124,9 +124,10 @@ impl CigarBuf {
     /// While the individual cigar elements have been validated, the resulting entire cigar needs validation
     /// before being stored or used (to check for interior clipping etc.), otherwise this could result in 
     /// an invalid cigar being stored 
-    pub unsafe fn parse_str_skip_validation(&mut self, s: &str) -> Result<(), CigarError> {
+    pub unsafe fn parse_skip_validation<T: AsRef<[u8]>>(&mut self, s: T) -> Result<(), CigarError> {
         self.clear();
-        let mut s = s;
+        let mut s = s.as_ref();
+        
         while !s.is_empty() {
             let (elem, s_new) = CigarElem::parse(s)?;
             s = s_new;
@@ -136,8 +137,8 @@ impl CigarBuf {
     }
     
     #[inline]
-    pub fn parse_str(&mut self, s: &str) -> Result<(), CigarError> {
-        unsafe { self.parse_str_skip_validation(s)?; }
+    pub fn parse<T: AsRef<[u8]>>(&mut self, s: T) -> Result<(), CigarError> {
+        unsafe { self.parse_skip_validation(s)?; }
         valid_elem_slice(self)
     }
 }
@@ -153,7 +154,7 @@ impl FromStr for CigarBuf {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut cb = Self::new();
-        cb.parse_str(s).map(|_| cb)
+        cb.parse(s).map(|_| cb)
     }
 }
 

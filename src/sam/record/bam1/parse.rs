@@ -107,7 +107,7 @@ impl BamRec {
                 }
             } else {
                 let s = std::str::from_utf8(s)?;
-                cb.parse_str(s)?;
+                cb.parse(s)?;
                 let elems = cb.as_elems();
                 let n_elem = elems.len();
 

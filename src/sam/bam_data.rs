@@ -53,7 +53,7 @@ mod tests {
         {
             let mut w = bd.writer(BDSection::Cigar).cigar_writer().unwrap();
             let mut cb = CigarBuf::new();
-            cb.parse_str("1S14M").unwrap();
+            cb.parse("1S14M").unwrap();
             w.write_elems(cb.as_elems()).unwrap();
         }
         

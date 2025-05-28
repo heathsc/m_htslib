@@ -25,6 +25,10 @@ pub enum CigarError {
     TrailingGarbage,
     #[error("CIGAR too short for trim operation")]
     CigarTooShortForTrim,
+    #[error("CIGAR op length overflow")]
+    CigarOpLenOverflow,
+    #[error("CIGAR missing op length")]
+    MissingOpLen,
 }
 
 #[derive(Error, Debug)]
