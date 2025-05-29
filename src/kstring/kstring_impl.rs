@@ -7,12 +7,12 @@ use std::{
     str::FromStr,
 };
 
-use super::KString;
+use super::{KString, MString, RawString};
 
 use crate::error::KStringError;
-use libc::{c_char, c_void, size_t};
+use libc::{c_void, size_t};
 
-impl PartialEq for KString {
+impl PartialEq for RawString {
     fn eq(&self, other: &Self) -> bool {
         self.l == other.l
             && (self.l == 0
@@ -22,6 +22,20 @@ impl PartialEq for KString {
     }
 }
 
+impl PartialEq for KString {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl PartialEq for MString {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for RawString {}
+impl Eq for MString {}
 impl Eq for KString {}
 
 impl fmt::Display for KString {
@@ -32,7 +46,7 @@ impl fmt::Display for KString {
 
 /// Because this has to interact with htslib which can alloc or free the storage
 /// we need to use malloc/free from libc for all memory handling
-impl Default for KString {
+impl Default for RawString {
     fn default() -> Self {
         Self {
             l: 0,
@@ -43,7 +57,7 @@ impl Default for KString {
     }
 }
 
-impl Drop for KString {
+impl Drop for RawString {
     fn drop(&mut self) {
         if !self.s.is_null() {
             unsafe { libc::free(self.s as *mut c_void) }
@@ -51,6 +65,10 @@ impl Drop for KString {
     }
 }
 
+unsafe impl Send for RawString {}
+unsafe impl Sync for RawString {}
+unsafe impl Send for MString {}
+unsafe impl Sync for MString {}
 unsafe impl Send for KString {}
 unsafe impl Sync for KString {}
 
@@ -73,31 +91,60 @@ impl Write for KString {
     }
 }
 
-impl KString {
-    pub fn new() -> Self {
-        Self::default()
+impl Write for MString {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.putsn(buf);
+        Ok(buf.len())
     }
 
-    pub fn len(&self) -> size_t {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.putsn(buf);
+        Ok(())
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl RawString {
+    #[inline]
+    fn len(&self) -> size_t {
         self.l
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[inline]
+    fn capacity(&self) -> size_t {
+        self.m
+    }
+    
+    #[inline]
+    fn is_empty(&self) -> bool {
         self.l == 0
     }
 
-    pub fn clear(&mut self) {
+    #[inline]
+    fn clear(&mut self) {
         self.l = 0
     }
 
-    pub fn truncate(&mut self, l: usize) {
+    #[inline]
+    fn truncate(&mut self, l: usize) {
         let l = l as size_t;
         if l < self.l {
             self.l = l
         }
     }
 
-    pub fn resize(&mut self, size: size_t) {
+    unsafe fn set_len(&mut self, l: usize) {
+        assert!(l <= self.m);
+        self.l = l
+    }
+    
+    fn resize(&mut self, size: size_t) {
         if self.m < size {
             let size = crate::roundup(size);
             let p = if self.s.is_null() {
@@ -105,7 +152,7 @@ impl KString {
             } else {
                 unsafe { libc::realloc(self.s as *mut c_void, size) }
             }
-            .cast::<c_char>();
+            .cast::<u8>();
 
             assert!(!p.is_null(), "KString: Out of memory");
 
@@ -115,75 +162,279 @@ impl KString {
         }
     }
 
-    pub fn expand(&mut self, extra: usize) {
+    fn extend(&mut self, extra: usize) {
         if let Some(new_size) = self.l.checked_add(extra) {
             self.resize(new_size)
         } else {
-            panic!("KString resize too large")
+            panic!("String resize too large")
         }
     }
 
-    pub fn putsn(&mut self, p: &[u8]) {
+    fn putsn(&mut self, p: &[u8]) {
         if !p.is_empty() {
             let l = p.len();
-            self.expand(l + 2);
+            self.extend(l);
             unsafe {
                 let ptr = self.s.add(self.l);
                 libc::memcpy(ptr as *mut c_void, p.as_ptr() as *const c_void, l);
                 self.l += l;
-                *(ptr.add(l)) = 0;
             }
         }
     }
 
-    pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
-        self.expand(2);
+    fn putc(&mut self, c: u8) -> Result<(), KStringError> {
+        self.extend(1);
         unsafe {
-            *self.s.add(self.l) = c as c_char;
-            *self.s.add(self.l + 1) = 0;
+            *self.s.add(self.l) = c;
         }
         self.l += 1;
         Ok(())
     }
 
     #[inline]
-    pub fn as_cstr(&self) -> &CStr {
-        unsafe { CStr::from_bytes_with_nul_unchecked(self._as_slice(true)) }
-    }
-
-    #[inline]
-    fn _as_slice(&self, inc_zero: bool) -> &[u8] {
+    fn as_slice(&self) -> &[u8] {
         if self.s.is_null() {
-            if inc_zero { &[0] } else { &[] }
+            &[]
         } else {
             let p = self.s as *const u8;
-            unsafe { std::slice::from_raw_parts(p, if inc_zero { self.l + 1 } else { self.l }) }
+            unsafe { std::slice::from_raw_parts(p, self.l) }
         }
     }
 
     #[inline]
-    pub fn as_slice(&self) -> &[u8] {
-        self._as_slice(false)
-    }
-
-    #[inline]
-    pub fn as_slice_with_null(&self) -> &[u8] {
-        self._as_slice(true)
-    }
-
-    #[inline]
-    pub fn to_str(&self) -> Result<&str, KStringError> {
+    fn to_str(&self) -> Result<&str, KStringError> {
         std::str::from_utf8(self.as_slice()).map_err(KStringError::Utf8Error)
     }
 
     #[inline]
-    pub fn as_ptr(&self) -> *const u8 {
+    fn as_ptr(&self) -> *const u8 {
         self.s as *const u8
     }
 
     #[inline]
-    pub fn as_ptr_mut(&mut self) -> *mut u8 {
+    fn as_ptr_mut(&mut self) -> *mut u8 {
         self.s as *mut u8
+    }
+}
+
+impl KString {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn len(&self) -> size_t {
+        self.inner.len()
+    }
+    
+    #[inline]
+    pub fn capacity(&self) -> size_t {
+        self.inner.capacity()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    #[inline]
+    pub fn truncate(&mut self, l: usize) {
+        let l = l as size_t;
+        let rs = &mut self.inner;
+        if l < rs.l {
+            rs.l = l;
+            unsafe { *rs.s.add(rs.l + 1) = 0; }
+        }
+    }
+
+    #[inline]
+    pub fn resize(&mut self, size: size_t) {
+        self.inner.resize(size)
+    }
+
+    #[inline]
+    pub fn extend(&mut self, extra: usize) {
+        self.inner.extend(extra)
+    }
+
+    pub fn putsn(&mut self, p: &[u8]) {
+        let rs = &mut self.inner;
+        if !p.is_empty() {
+            let l = p.len();
+            rs.extend(l + 2);
+            unsafe {
+                let ptr = rs.s.add(rs.l);
+                libc::memcpy(ptr as *mut c_void, p.as_ptr() as *const c_void, l);
+                rs.l += l;
+                *(ptr.add(l)) = 0;
+            }
+        }
+    }
+
+    pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
+        let rs = &mut self.inner;
+        rs.extend(2);
+        unsafe {
+            *rs.s.add(rs.l) = c;
+            *rs.s.add(rs.l + 1) = 0;
+        }
+        rs.l += 1;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn as_cstr(&self) -> &CStr {
+        unsafe { CStr::from_bytes_with_nul_unchecked(self.as_slice_with_null()) }
+    }
+
+    #[inline]
+    fn as_slice_with_null(&self) -> &[u8] {
+        if self.inner.s.is_null() {
+            &[0]
+        } else {
+            let p = self.inner.s as *const u8;
+            unsafe { std::slice::from_raw_parts(p, self.inner.l + 1) }
+        }
+    }
+    
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        self.inner.as_slice()
+    }
+    
+    #[inline]
+    pub fn to_str(&self) -> Result<&str, KStringError> {
+        self.inner.to_str()
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *const u8 {
+        self.inner.as_ptr()
+    }
+
+    #[inline]
+    pub fn as_ptr_mut(&mut self) -> *mut u8 {
+        self.inner.as_ptr_mut()
+    }
+}
+
+impl MString {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn len(&self) -> size_t {
+        self.inner.len()
+    }
+
+    
+    #[inline]
+    pub fn capacity(&self) -> size_t {
+        self.inner.capacity()
+    }
+    
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    #[inline]
+    pub fn truncate(&mut self, l: usize) {
+        self.inner.truncate(l)
+    }
+
+    /// Forces the length of the mstring to `new_len`.
+    ///
+    /// This is a low-level operation that maintains none of the normal
+    /// invariants of the type. Normally changing the length of a mstring
+    /// is done using one of the safe operations instead, such as
+    /// [`truncate`], [`resize`], [`extend`], or [`clear`].
+    ///
+    /// [`truncate`]: MString::truncate
+    /// [`resize`]: MString::resize
+    /// [`extend`]: MString::extend
+    /// [`clear`]: MString::clear
+    ///
+    /// # Safety
+    ///
+    /// - `new_len` must be less than or equal to [`capacity()`].
+    /// - The elements at `old_len..new_len` must be initialized.
+    ///
+    /// [`capacity()`]: MString::capacity
+    #[inline]
+    pub unsafe fn set_len(&mut self, l: usize) {
+        unsafe { self.inner.set_len(l) }
+    }
+    
+    #[inline]
+    pub fn resize(&mut self, size: size_t) {
+        self.inner.resize(size)
+    }
+
+    #[inline]
+    pub fn extend(&mut self, extra: usize) {
+        self.inner.extend(extra)
+    }
+
+    pub fn putsn(&mut self, p: &[u8]) {
+        self.inner.putsn(p)
+    }
+
+    pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
+        self.inner.putc(c)
+    }
+    
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        self.inner.as_slice()
+    }
+    
+    #[inline]
+    pub fn to_str(&self) -> Result<&str, KStringError> {
+        self.inner.to_str()
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *const u8 {
+        self.inner.as_ptr()
+    }
+
+    #[inline]
+    pub fn as_ptr_mut(&mut self) -> *mut u8 {
+        self.inner.as_ptr_mut()
+    }
+}
+
+impl FromStr for RawString {
+    type Err = KStringError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut ks = Self::default();
+        ks.putsn(s.as_bytes());
+        Ok(ks)
+    }
+}
+
+impl FromStr for MString {
+    type Err = KStringError;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        RawString::from_str(s).map(|inner| {
+            Self { inner }
+        })
     }
 }
 

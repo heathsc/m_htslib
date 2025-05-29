@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{AuxError, CigarError, CramError, KStringError, ParseINumError};
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum SamError {
     #[error("Failed to read SAM/BAM/CRAM header")]
     FailedHeaderRead,
@@ -88,6 +88,8 @@ pub enum SamError {
     IllegalUseOfSeqWriter,
     #[error("Can only use cigar_writer when writing Cigar section")]
     IllegalUseOfCigarWriter,
+    #[error("Can only use aux_writer when writing Aux section")]
+    IllegalUseOfAuxWriter,
     #[error("Parse number error: {0}")]
     INumError(#[from] ParseINumError),
 }

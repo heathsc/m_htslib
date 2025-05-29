@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug, Eq, PartialEq)]
+#[derive(Error, Debug)]
 pub enum BgzfError {
     #[error("Error opening BGZF file")]
     OpenError,

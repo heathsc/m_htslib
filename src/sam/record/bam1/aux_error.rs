@@ -1,10 +1,10 @@
-use std::{ffi::FromBytesWithNulError, num::{ParseFloatError, ParseIntError}, str::Utf8Error};
+use std::{ffi::FromBytesWithNulError, num::{ParseFloatError, ParseIntError}, str::Utf8Error, io};
 
 use thiserror::Error;
 
 use crate::ParseINumError;
 
-#[derive(Error, Debug, Eq, PartialEq)]
+#[derive(Error, Debug)]
 pub enum AuxError {
     #[error("Internal Error")]
     InternalError,
@@ -52,4 +52,6 @@ pub enum AuxError {
     FloatError,
     #[error("Parse number error: {0}")]
     INumError(#[from] ParseINumError),
+    #[error("Parse number error: {0}")]
+    IoError(#[from] io::Error),
 }

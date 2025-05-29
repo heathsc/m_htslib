@@ -1,18 +1,18 @@
 use std::{cmp::Ordering, collections::HashSet};
 
 use super::{BDMask, BDSection, BDState, BDWriter, BamData};
-use crate::kstring::KString;
+use crate::{SamError, kstring::MString};
 
 impl Default for BamData {
     fn default() -> Self {
         Self {
             state: BDState::default(),
-            data: KString::new(),
-            tmp_data: KString::new(),
+            data: MString::default(),
+            tmp_data: MString::default(),
             mask: BDMask::default(),
             section: None,
             last_error: None,
-            hash: HashSet::new(),
+            hash: Some(HashSet::new()),
         }
     }
 }
@@ -57,5 +57,15 @@ impl BamData {
         };
 
         (off, len)
+    }
+
+    #[inline]
+    pub fn last_error(&self) -> Option<&SamError> {
+        self.last_error.as_ref()
+    }
+
+    #[inline]
+    pub fn clear_error(&mut self) -> Option<SamError> {
+        self.last_error.take()
     }
 }

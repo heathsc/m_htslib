@@ -315,9 +315,9 @@ mod tests {
     fn construction() {
         let el = "213M".parse::<CigarElem>().expect("Error parsing element");
         assert_eq!(format!("{el}"), "213M");
-        assert_eq!(
+        assert!(matches!(
             "2S1H".parse::<CigarElem>(),
             Err(CigarError::TrailingGarbage)
-        );
+        ));
     }
 }

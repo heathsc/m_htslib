@@ -224,24 +224,24 @@ mod tests {
             .parse::<CigarBuf>()
             .expect("Error parsing Cigar");
         assert_eq!(format!("{cb}"), "5S80M2S6H");
-        assert_eq!(
+        assert!(matches!(
             cb.push_checked("3S".parse::<CigarElem>().unwrap()),
             Err(CigarError::InteriorHardClip)
-        );
-        assert_eq!(
+        ));
+        assert!(matches!(
             cb.push_checked("32H".parse::<CigarElem>().unwrap()),
             Err(CigarError::MultipleAdjacentHardClips)
-        );
+        ));
         cb.clear();
         assert_eq!(format!("{cb}"), "*");
         cb.push_checked("1S".parse::<CigarElem>().unwrap()).unwrap();
         cb.push_checked("32M".parse::<CigarElem>().unwrap())
             .unwrap();
         cb.push_checked("5S".parse::<CigarElem>().unwrap()).unwrap();
-        assert_eq!(
+        assert!(matches!(
             cb.push_checked("1M".parse::<CigarElem>().unwrap()),
             Err(CigarError::InteriorSoftClip)
-        );
+        ));
         cb.push_checked("1H".parse::<CigarElem>().unwrap()).unwrap();
         assert_eq!(format!("{cb}"), "1S32M5S1H");
     }

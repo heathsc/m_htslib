@@ -329,10 +329,10 @@ mod test {
         let x = parse_sam_flag(r"071".as_bytes()).expect("Error parsing octal");
         assert_eq!(x, 57);
 
-        assert_eq!(
+        assert!(matches!(
             parse_sam_flag(r"0193".as_bytes()),
             Err(SamError::BadFlagFormat)
-        );
+        ));
 
         let x = parse_sam_flag(r"6".as_bytes()).expect("Error parsing decimal");
         assert_eq!(x, 6);

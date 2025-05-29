@@ -133,6 +133,7 @@ impl BamRec {
     pub fn seq_qual(&self) -> SeqQualIter {
         SeqQualIter::new(self.seq_slice(), self.qual_slice())
     }
+    
 }
 
 #[inline]

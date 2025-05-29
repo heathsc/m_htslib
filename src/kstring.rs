@@ -7,9 +7,21 @@ pub mod kstring_error;
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct KString {
+struct RawString {
     l: size_t,
     m: size_t,
-    s: *mut c_char,
+    s: *mut u8,
     marker: PhantomData<c_char>,
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct KString {
+    inner: RawString
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct MString {
+    inner: RawString
 }

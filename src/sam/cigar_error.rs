@@ -3,7 +3,7 @@ use thiserror::Error;
 use crate::ParseINumError;
 use super::cigar::CigarElem;
 
-#[derive(Error, Debug, Eq, PartialEq)]
+#[derive(Error, Debug)]
 pub enum CigarError {
     // Hard clip ops can only be at the end of cigar strings
     #[error("Hard clip operation not at ends of CIGAR")]

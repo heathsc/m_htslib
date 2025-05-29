@@ -1,4 +1,8 @@
-use std::{collections::HashSet, str::FromStr};
+use std::{
+    collections::HashSet,
+    io::{Seek, SeekFrom, Write},
+    str::FromStr,
+};
 
 use libc::c_int;
 
@@ -326,6 +330,207 @@ impl BamRec {
         self.inner.push_char(c);
         self.inner.copy_data(x.to_le().as_ref());
     }
+}
+
+pub fn parse_aux_tag<W: Write + Seek>(
+    wrt: &mut W,
+    s: &[u8],
+    hash: &mut HashSet<[u8; 2]>,
+) -> Result<(), AuxError> {
+    if s.len() < 5 {
+        Err(AuxError::ShortTag)
+    } else if s.len() == 5 && s[3] != b'Z' && s[3] != b'H' {
+        Err(AuxError::ZeroLengthTag)
+    } else if !(s[0].is_ascii_alphabetic() && s[1].is_ascii_alphanumeric()) {
+        Err(AuxError::BadCharsInTagId(s[0], s[1]))
+    } else if &[s[2], s[4]] != b"::" {
+        Err(AuxError::BadFormat)
+    } else if !hash.insert([s[0], s[1]]) {
+        // Check if this tag has already been used for this record
+        Err(AuxError::DuplicateTagId(s[0] as char, s[1] as char))
+    } else {
+        // Copy 2 letter tag ID
+        wrt.write_all(&s[..2])?;
+        // Parse rest of tag
+        parse_tag_body(wrt, &s[3..])
+    }
+}
+
+fn parse_tag_body<W: Write + Seek>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    match s[0] {
+        // Single character
+        b'A' | b'a' | b'C' | b'c' => parse_a_tag(wrt, &s[2..])?,
+        // Integer
+        b'I' | b'i' => parse_integer(wrt, &s[2..])?,
+        // Single precision floating point
+        b'f' => copy_num(wrt, b'f', std::str::from_utf8(&s[2..])?.parse::<f32>()?),
+        // Double precision floating point (not in the spec, but it is in htslib...)
+        b'd' => copy_num(wrt, b'd', std::str::from_utf8(&s[2..])?.parse::<f64>()?),
+        // Hex digits
+        b'H' => parse_h_tag(wrt, &s[2..])?,
+        // Character string
+        b'Z' => parse_z_tag(wrt, &s[2..])?,
+        // Numeric array
+        b'B' => parse_array(wrt, &s[2..])?,
+        c => return Err(AuxError::UnknownType(c as char)),
+    }
+    Ok(())
+}
+
+fn parse_array<W: Write + Seek>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    if s.len() > 1 && s[1] != b',' {
+        Err(AuxError::BadFormat)
+    } else {
+        // We will fill in the types and actual array count later
+        // So for now we will jump forward 6 bytes
+        wrt.write_all(&[0, 0, 0, 0, 0, 0])?;
+        let off = wrt.stream_position()?;
+
+        let (n_elem, tp) = match read_array(wrt, &s[2..], s[0]) {
+            Ok(n) => (n, s[0]),
+            Err(AuxError::IntegerTooSmall(new_type)) => {
+                // Retry with new type. This should not fail (but if it does we will return with an error)
+                wrt.seek(SeekFrom::Start(off))?;
+                (read_array(wrt, &s[2..], new_type)?, new_type)
+            }
+            Err(e) => return Err(e),
+        };
+        wrt.seek(SeekFrom::Start(off - 6))?;
+        wrt.write_all(b"B")?;
+        copy_num(wrt, tp, n_elem as u32);
+        wrt.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+}
+
+fn read_array<W: Write>(wrt: &mut W, s: &[u8], elem_type: u8) -> Result<usize, AuxError> {
+    let res = match elem_type {
+        b'c' => read_int_array::<i8, W>(wrt, s),
+        b'C' => read_int_array::<u8, W>(wrt, s),
+        b's' => read_int_array::<i16, W>(wrt, s),
+        b'S' => read_int_array::<u16, W>(wrt, s),
+        b'i' => read_int_array::<i32, W>(wrt, s),
+        b'I' => read_int_array::<u32, W>(wrt, s),
+        b'f' => read_float_array::<f32, W>(wrt, s),
+        b'd' => read_float_array::<f64, W>(wrt, s),
+        _ => Err(AuxError::UnknownArrayType(elem_type as char)),
+    };
+
+    // CHeck for overflow
+    if let Err(AuxError::IntegerOverflow((min_val, max_val))) = res {
+        // If we did overflow (this can only occur with an integer type), find the
+        // smallest type that can hold all values and return that
+        let new_type = find_best_type(min_val, max_val)?;
+        Err(AuxError::IntegerTooSmall(new_type))
+    } else {
+        let n_elem = res?;
+        Ok(n_elem)
+    }
+}
+
+fn read_int_array<T: LeBytes + TryFrom<i64>, W: Write>(
+    wrt: &mut W,
+    s: &[u8],
+) -> Result<usize, AuxError> {
+    let mut n_elem = 0;
+    let mut max_val = 0;
+    let mut min_val = 0;
+    let mut overflow = false;
+
+    for p in s.split(|c| *c == b',') {
+        let i = parse_i64(p)?;
+        min_val = min_val.min(i);
+        max_val = max_val.max(i);
+        match i.try_into() {
+            Ok(j) => {
+                if !overflow {
+                    let j: T = j;
+                    let _ = wrt.write_all(j.to_le().as_ref());
+                    n_elem += 1;
+                }
+            }
+            Err(_) => overflow = true,
+        }
+    }
+    if overflow {
+        Err(AuxError::IntegerOverflow((min_val, max_val)))
+    } else {
+        Ok(n_elem)
+    }
+}
+
+fn read_float_array<T: LeBytes + FromStr, W: Write>(
+    wrt: &mut W,
+    s: &[u8],
+) -> Result<usize, AuxError> {
+    let mut n_elem = 0;
+
+    for p in s.split(|c| *c == b',') {
+        let i = std::str::from_utf8(p)?
+            .parse::<T>()
+            .map_err(|_| AuxError::FloatError)?;
+
+        let _ = wrt.write_all(i.to_le().as_ref());
+        n_elem += 1;
+    }
+    Ok(n_elem)
+}
+
+fn parse_a_tag<W: Write>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    if s.len() != 1 || !s[0].is_ascii_graphic() {
+        Err(AuxError::BadAFormat)
+    } else {
+        let _ = wrt.write_all(&[b'A', s[0]]);
+        Ok(())
+    }
+}
+
+fn parse_z_tag<W: Write>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    if s.iter().any(|c| !(b' '..=b'~').contains(c)) {
+        Err(AuxError::IllegalCharacters)
+    } else {
+        push_z_h_tag(wrt, b'Z', s);
+        Ok(())
+    }
+}
+
+fn parse_h_tag<W: Write>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    if (s.len() & 1) != 0 {
+        Err(AuxError::OddHexDigits)
+    } else if s.iter().any(|c| !c.is_ascii_hexdigit()) {
+        Err(AuxError::IllegalHexCharacters)
+    } else {
+        push_z_h_tag(wrt, b'H', s);
+        Ok(())
+    }
+}
+
+fn push_z_h_tag<W: Write>(wrt: &mut W, c: u8, s: &[u8]) {
+    let _ = wrt.write_all(&[c]);
+    if !s.is_empty() {
+        let _ = wrt.write_all(s);
+    }
+    let _ = wrt.write_all(&[0]);
+}
+
+fn parse_integer<W: Write>(wrt: &mut W, s: &[u8]) -> Result<(), AuxError> {
+    // We pack an integer into the smallest size that can hold it.
+    match parse_i64(s)? {
+        i if i < i32::MIN as i64 => return Err(AuxError::IntegerOutOfRange),
+        i if i < i16::MIN as i64 => copy_num(wrt, b'i', i as i32),
+        i if i < i8::MIN as i64 => copy_num(wrt, b's', i as i16),
+        i if i < 0 => wrt.write_all(&[b'c', i as i8 as u8]).unwrap(),
+        i if i <= u8::MAX as i64 => wrt.write_all(&[b'c', i as u8]).unwrap(),
+        i if i <= u16::MAX as i64 => copy_num(wrt, b'S', i as u16),
+        i if i <= u32::MAX as i64 => copy_num(wrt, b'I', i as u32),
+        _ => return Err(AuxError::IntegerOutOfRange),
+    }
+    Ok(())
+}
+
+fn copy_num<T: LeBytes, W: Write>(wrt: &mut W, c: u8, x: T) {
+    let _ = wrt.write_all(&[c]);
+    let _ = wrt.write_all(x.to_le().as_ref());
 }
 
 fn find_best_type(min_val: i64, max_val: i64) -> Result<u8, AuxError> {

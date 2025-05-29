@@ -1,6 +1,6 @@
 use crate::{
     SamError,
-    kstring::KString,
+    kstring::MString,
     sam::{
         Cigar, CigarElem, cigar_validate::valid_elem_slice,
         record::bam1::aux_iter::validate_aux_slice,
@@ -64,7 +64,7 @@ impl BamData {
         let (off, len) = self.offset_length(s);
         let new_len = self.tmp_data.len();
         if new_len > len {
-            self.data.expand(new_len - len);
+            self.data.extend(new_len - len);
         };
         let ptr = self.data.as_ptr_mut();
         assert!(!ptr.is_null());
@@ -87,7 +87,7 @@ impl BamData {
         }
     }
 
-    fn get_kstring_mut(&mut self, tmp_data: bool) -> &mut KString {
+    fn get_mstring_mut(&mut self, tmp_data: bool) -> &mut MString {
         if !tmp_data {
             &mut self.data
         } else {
@@ -95,7 +95,7 @@ impl BamData {
         }
     }
 
-    fn get_kstring(&self, tmp_data: bool) -> &KString {
+    fn get_mstring(&self, tmp_data: bool) -> &MString {
         if !tmp_data {
             &self.data
         } else {
@@ -174,7 +174,7 @@ impl BamData {
 
     fn fill_dummy_qual(&mut self, tmp_data: bool, l: usize) {
         // In this case we will fill in a dummy qual string, setting all values to 255
-        let ks = self.get_kstring_mut(tmp_data);
+        let ks = self.get_mstring_mut(tmp_data);
         for _ in 0..l {
             ks.putc(255).unwrap()
         }
@@ -207,14 +207,14 @@ impl BamData {
         let ks = if tmp_data { &self.tmp_data } else { &self.data };
 
         let s = &ks.as_slice()[off..];
-        validate_aux_slice(s, &mut self.hash)?;
+        validate_aux_slice(s, self.hash.as_mut().unwrap())?;
         Ok(())
     }
 
     fn get_cigar_qlen(&self) -> Option<usize> {
         if self.mask.is_set(BDSection::Cigar) && self.state.n_cigar_elem > 0 {
             let off = self.state.cigar_offset();
-            let ks = self.get_kstring(false);
+            let ks = self.get_mstring(false);
             let s = get_elem_slice(ks, off, self.state.n_cigar_elem as usize);
 
             // If the cigar data are here then they have already been validated
@@ -246,7 +246,7 @@ impl BamData {
 
     fn validate_cigar(&mut self, tmp_data: bool) -> Result<(), SamError> {
         let off = self.state.cigar_offset();
-        let ks = self.get_kstring(tmp_data);
+        let ks = self.get_mstring(tmp_data);
         
         let cigar_len = ks.len() - off;
         if cigar_len & 3 != 0 {
@@ -274,7 +274,7 @@ impl BamData {
     }
 
     fn validate_qname(&mut self, tmp_data: bool) -> Result<(), SamError> {
-        let ks = self.get_kstring_mut(tmp_data);
+        let ks = self.get_mstring_mut(tmp_data);
         let s = ks.as_slice();
 
         // Using KString we are assured that the name is null terminated, so we just need to
@@ -303,8 +303,8 @@ impl BamData {
     }
 }
 
-fn get_elem_slice(ks: &KString, off: usize, l: usize) -> &[CigarElem] {
-    let p = ks.as_ptr();
+fn get_elem_slice(ms: &MString, off: usize, l: usize) -> &[CigarElem] {
+    let p = ms.as_ptr();
     if p.is_null() || l == 0 {
         &[]
     } else {

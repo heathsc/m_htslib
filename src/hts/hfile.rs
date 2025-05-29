@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(v[4], 10);
 
         // Check that we are at EOF
-        assert_eq!(fp.read(&mut buf), Err(HtsError::EOF));
+        assert!(matches!(fp.read(&mut buf), Err(HtsError::EOF)));
     }
 
     #[test]

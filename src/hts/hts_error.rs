@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{AuxError, BgzfError, CigarError, CramError, KHashError, KStringError, SamError};
 
-#[derive(Error, Debug, Eq, PartialEq)]
+#[derive(Error, Debug)]
 pub enum HtsError {
     #[error("End of file")]
     EOF,

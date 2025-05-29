@@ -647,7 +647,7 @@ mod tests {
         assert_eq!(ks.as_cstr(), c"This is a test");
         b.get_line(10, &mut ks).unwrap();
         assert_eq!(ks.as_cstr(), c"Second line");
-        assert_eq!(b.get_line(10, &mut ks), Err(BgzfError::EOF));
+        assert!(matches!(b.get_line(10, &mut ks), Err(BgzfError::EOF)));
     }
 
     #[test]
