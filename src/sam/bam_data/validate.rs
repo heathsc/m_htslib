@@ -12,16 +12,16 @@ use super::{BDSection, BDWriterState, BamData};
 const ZEROS: [u8; 4] = [0, 0, 0, 0];
 
 impl BamData {
-    pub(super) fn validate_section(&mut self, state: &BDWriterState) {
+    pub(super) fn validate_section(&mut self, state: &BDWriterState, validated: bool) {
         if let Some(s) = self.section.take() {
             let tmp_data = state.use_tmp();
 
-            let res = match s {
-                BDSection::QName => self.validate_qname(tmp_data),
-                BDSection::Cigar => self.validate_cigar(tmp_data),
-                BDSection::Seq => self.validate_seq(tmp_data, state.size()),
-                BDSection::Qual => self.validate_qual(tmp_data, state.size()),
-                BDSection::Aux => self.validate_aux(tmp_data),
+            let res = match (s, validated) {
+                (BDSection::QName, _) => self.validate_qname(tmp_data),
+                (BDSection::Cigar, _) => self.validate_cigar(tmp_data),
+                (BDSection::Seq, _) => self.validate_seq(tmp_data, state.size()),
+                (BDSection::Qual, _) => self.validate_qual(tmp_data, state.size()),
+                (BDSection::Aux, v) => self.validate_aux(tmp_data, v),
             };
 
             match res {
@@ -158,7 +158,7 @@ impl BamData {
         } else {
             let r = self.get_test_seq_len(size, n_bytes == 0);
             let seq_len = r?;
-            
+
             // Check the number of bytes is consistent with the expected number of bases
             if n_bytes != (seq_len + 1) >> 1 {
                 Err(SamError::SeqLenMismatch)
@@ -199,15 +199,17 @@ impl BamData {
         Ok(())
     }
 
-    fn validate_aux(&mut self, tmp_data: bool) -> Result<(), SamError> {
-        let off = self.state.aux_offset();
+    fn validate_aux(&mut self, tmp_data: bool, validated: bool) -> Result<(), SamError> {
+        if !validated {
+            let off = self.state.aux_offset();
 
-        // We can't use self.get_data or self.get_kstring as this annoys the
-        // borrow checker...
-        let ks = if tmp_data { &self.tmp_data } else { &self.data };
+            // We can't use self.get_data or self.get_kstring as this annoys the
+            // borrow checker...
+            let ks = if tmp_data { &self.tmp_data } else { &self.data };
 
-        let s = &ks.as_slice()[off..];
-        validate_aux_slice(s, self.hash.as_mut().unwrap())?;
+            let s = &ks.as_slice()[off..];
+            validate_aux_slice(s, self.hash.as_mut().unwrap())?;
+        }
         Ok(())
     }
 
@@ -247,7 +249,7 @@ impl BamData {
     fn validate_cigar(&mut self, tmp_data: bool) -> Result<(), SamError> {
         let off = self.state.cigar_offset();
         let ks = self.get_mstring(tmp_data);
-        
+
         let cigar_len = ks.len() - off;
         if cigar_len & 3 != 0 {
             Err(SamError::CigarLengthNotMul4)

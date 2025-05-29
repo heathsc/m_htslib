@@ -13,6 +13,7 @@ pub struct BDWriter<'a> {
 pub struct BDWriterState {
     use_tmp: bool,
     reported_size: bool,
+    validated: bool,
     size: usize,
 }
 
@@ -40,7 +41,7 @@ impl BDWriterState {
 
 impl Drop for BDWriter<'_> {
     fn drop(&mut self) {
-        self.bd.validate_section(&self.state);
+        self.bd.validate_section(&self.state, self.state.validated);
     }
 }
 
@@ -99,11 +100,11 @@ impl<'a> BDWriter<'a> {
         }
     }
     
-    pub fn aux_writer(self) -> Result<BDAuxWriter<'a>, SamError> {
+    pub fn aux_writer(mut self) -> Result<BDAuxWriter<'a>, SamError> {
         if matches!(self.bd.section, Some(BDSection::Aux)) {
             self.bd.hash.as_mut().unwrap().clear();
             let pos = if self.state.use_tmp { self.bd.data.len() as u32 } else { 0 };
-
+            self.state.validated = true;
             Ok(BDAuxWriter { inner: self, start_pos: pos, end_pos: pos })
         } else {
             Err(SamError::IllegalUseOfAuxWriter)
