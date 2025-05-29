@@ -2,16 +2,6 @@ use super::{BDState, BDSection};
 
 impl BDState {
     #[inline]
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-    
-    #[inline]
-    pub(super) fn clear(&mut self) {
-        *self = Self::default()
-    }
-
-    #[inline]
     pub(super) fn cigar_offset(&self) -> usize {
         assert_eq!(self.qname_len & 3, 0);
         self.qname_len as usize

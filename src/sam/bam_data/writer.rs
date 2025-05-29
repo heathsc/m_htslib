@@ -122,16 +122,16 @@ impl BDSeqWriter<'_> {
             let iter = seq.chunks_exact(2);
             let r = iter.remainder();
 
-            let ks = self.inner.ms();
+            let ms = self.inner.ms();
             // Pack sequence into nybbles
             for s in iter {
                 let x = Base::from_u8(s[0]).combine(&Base::from_u8(s[1]));
-                ks.putc(x)?;
+                ms.putc(x)
             }
 
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                ks.putc(Base::from_u8(*c).as_n() << 4)?
+                ms.putc(Base::from_u8(*c).as_n() << 4)
             }
 
             self.inner.set_seq_len(seq.len());

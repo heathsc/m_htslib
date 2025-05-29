@@ -176,7 +176,7 @@ impl BamData {
         // In this case we will fill in a dummy qual string, setting all values to 255
         let ks = self.get_mstring_mut(tmp_data);
         for _ in 0..l {
-            ks.putc(255).unwrap()
+            ks.putc(255)
         }
     }
 

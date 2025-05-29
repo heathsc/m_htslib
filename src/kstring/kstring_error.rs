@@ -10,6 +10,8 @@ pub enum KStringError {
     SizeRequestTooLarge,
     #[error("Internal null character in supplied slice")]
     InternalNullInSlice,
+    #[error("Cannor push null character to KString")]
+    InternalNull,
     #[error("Utf8 Error: {0}")]
     Utf8Error(#[from] Utf8Error),
 }

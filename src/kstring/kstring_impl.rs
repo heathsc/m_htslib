@@ -75,14 +75,12 @@ unsafe impl Sync for KString {}
 impl Write for KString {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.putsn(buf);
-        Ok(buf.len())
+        self.putsn(buf).map_err(io::Error::other).map(|_| buf.len())
     }
 
     #[inline]
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.putsn(buf);
-        Ok(())
+        self.putsn(buf).map_err(io::Error::other)
     }
 
     #[inline]
@@ -120,7 +118,7 @@ impl RawString {
     fn capacity(&self) -> size_t {
         self.m
     }
-    
+
     #[inline]
     fn is_empty(&self) -> bool {
         self.l == 0
@@ -143,7 +141,7 @@ impl RawString {
         assert!(l <= self.m);
         self.l = l
     }
-    
+
     fn resize(&mut self, size: size_t) {
         if self.m < size {
             let size = crate::roundup(size);
@@ -182,13 +180,12 @@ impl RawString {
         }
     }
 
-    fn putc(&mut self, c: u8) -> Result<(), KStringError> {
+    fn putc(&mut self, c: u8) {
         self.extend(1);
         unsafe {
             *self.s.add(self.l) = c;
         }
         self.l += 1;
-        Ok(())
     }
 
     #[inline]
@@ -213,7 +210,7 @@ impl RawString {
 
     #[inline]
     fn as_ptr_mut(&mut self) -> *mut u8 {
-        self.s as *mut u8
+        self.s
     }
 }
 
@@ -227,7 +224,7 @@ impl KString {
     pub fn len(&self) -> size_t {
         self.inner.len()
     }
-    
+
     #[inline]
     pub fn capacity(&self) -> size_t {
         self.inner.capacity()
@@ -249,7 +246,9 @@ impl KString {
         let rs = &mut self.inner;
         if l < rs.l {
             rs.l = l;
-            unsafe { *rs.s.add(rs.l + 1) = 0; }
+            unsafe {
+                *rs.s.add(rs.l + 1) = 0;
+            }
         }
     }
 
@@ -263,11 +262,15 @@ impl KString {
         self.inner.extend(extra)
     }
 
-    pub fn putsn(&mut self, p: &[u8]) {
+    pub fn putsn(&mut self, p: &[u8]) -> Result<(), KStringError> {
         let rs = &mut self.inner;
         if !p.is_empty() {
+            if p.contains(&0) {
+                return Err(KStringError::InternalNullInSlice);
+            }
+
             let l = p.len();
-            rs.extend(l + 2);
+            rs.extend(l + 1);
             unsafe {
                 let ptr = rs.s.add(rs.l);
                 libc::memcpy(ptr as *mut c_void, p.as_ptr() as *const c_void, l);
@@ -275,17 +278,22 @@ impl KString {
                 *(ptr.add(l)) = 0;
             }
         }
+        Ok(())
     }
 
     pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
-        let rs = &mut self.inner;
-        rs.extend(2);
-        unsafe {
-            *rs.s.add(rs.l) = c;
-            *rs.s.add(rs.l + 1) = 0;
+        if c == 0 {
+            Err(KStringError::InternalNull)
+        } else {
+            let rs = &mut self.inner;
+            rs.extend(2);
+            unsafe {
+                *rs.s.add(rs.l) = c;
+                *rs.s.add(rs.l + 1) = 0;
+            }
+            rs.l += 1;
+            Ok(())
         }
-        rs.l += 1;
-        Ok(())
     }
 
     #[inline]
@@ -302,12 +310,12 @@ impl KString {
             unsafe { std::slice::from_raw_parts(p, self.inner.l + 1) }
         }
     }
-    
+
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
         self.inner.as_slice()
     }
-    
+
     #[inline]
     pub fn to_str(&self) -> Result<&str, KStringError> {
         self.inner.to_str()
@@ -335,12 +343,11 @@ impl MString {
         self.inner.len()
     }
 
-    
     #[inline]
     pub fn capacity(&self) -> size_t {
         self.inner.capacity()
     }
-    
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
@@ -378,7 +385,7 @@ impl MString {
     pub unsafe fn set_len(&mut self, l: usize) {
         unsafe { self.inner.set_len(l) }
     }
-    
+
     #[inline]
     pub fn resize(&mut self, size: size_t) {
         self.inner.resize(size)
@@ -393,15 +400,15 @@ impl MString {
         self.inner.putsn(p)
     }
 
-    pub fn putc(&mut self, c: u8) -> Result<(), KStringError> {
+    pub fn putc(&mut self, c: u8) {
         self.inner.putc(c)
     }
-    
+
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
         self.inner.as_slice()
     }
-    
+
     #[inline]
     pub fn to_str(&self) -> Result<&str, KStringError> {
         self.inner.to_str()
@@ -430,11 +437,9 @@ impl FromStr for RawString {
 
 impl FromStr for MString {
     type Err = KStringError;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        RawString::from_str(s).map(|inner| {
-            Self { inner }
-        })
+        RawString::from_str(s).map(|inner| Self { inner })
     }
 }
 
@@ -443,7 +448,7 @@ impl FromStr for KString {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut ks = Self::default();
-        ks.putsn(s.as_bytes());
+        ks.putsn(s.as_bytes())?;
         Ok(ks)
     }
 }
@@ -469,10 +474,10 @@ mod tests {
     fn construction2() {
         let s = "Hello World".as_bytes();
         let mut ks = KString::new();
-        ks.putsn(s);
+        let _ = ks.putsn(s);
         assert_eq!(ks.len(), 11);
 
-        ks.putsn(", and goodbye".as_bytes());
+        let _ = ks.putsn(", and goodbye".as_bytes());
         assert_eq!(ks.len(), 24);
         assert_eq!(ks.as_cstr(), c"Hello World, and goodbye");
     }

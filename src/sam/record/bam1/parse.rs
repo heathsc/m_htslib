@@ -211,7 +211,7 @@ fn parse_contig(s: &[u8], hdr: &mut SamHdr, ks: &mut KString) -> Result<i32, Sam
         Err(SamError::NoSqLines)
     } else {
         ks.clear();
-        ks.putsn(s);
+        ks.putsn(s)?;
         match hdr.name2tid(ks.as_cstr()) {
             Ok(i) => Ok(i as i32),
             Err(SamError::UnknownReference) => {
