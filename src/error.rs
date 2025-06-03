@@ -1,6 +1,7 @@
-use super::{bgzf, cram, hts, int_utils, khash, kstring, sam};
+use super::{bgzf, cram, faidx, hts, int_utils, khash, kstring, sam};
 pub use bgzf::bgzf_error::*;
 pub use cram::cram_error::*;
+pub use faidx::faidx_error::*;
 pub use hts::hts_error::*;
 pub use int_utils::ParseINumError;
 pub use khash::khash_error::*;

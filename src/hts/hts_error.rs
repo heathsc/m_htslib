@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{AuxError, BgzfError, CigarError, CramError, KHashError, KStringError, SamError};
+use crate::{AuxError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, SamError};
 
 #[derive(Error, Debug)]
 pub enum HtsError {
@@ -52,4 +52,6 @@ pub enum HtsError {
     KHashError(#[from] KHashError),
     #[error("KString Error: {0}")]
     KStringError(#[from] KStringError),
+    #[error("Faidx Error: {0}")]
+    FaidxError(#[from] FaidxError),
 }
