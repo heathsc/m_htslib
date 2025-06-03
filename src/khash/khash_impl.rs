@@ -1,5 +1,4 @@
-use std::marker::PhantomData;
-use std::{iter::FusedIterator, mem, ptr};
+use std::{iter::FusedIterator, marker::PhantomData, mem, ptr};
 
 use super::khash_func::*;
 use crate::KHashError;
@@ -11,11 +10,7 @@ const HASH_UPPER: f64 = 0.77;
 
 #[inline]
 const fn fsize(m: KHInt) -> usize {
-    if m < 16 {
-        1
-    } else {
-        (m as usize) >> 4
-    }
+    if m < 16 { 1 } else { (m as usize) >> 4 }
 }
 
 #[inline]
@@ -172,7 +167,7 @@ impl<K> KHashRaw<K> {
     }
     #[inline]
     pub(super) unsafe fn _drop_key(&mut self, i: KHInt) -> K {
-       unsafe { ptr::read(self.keys.add(i as usize)) }
+        unsafe { ptr::read(self.keys.add(i as usize)) }
     }
 
     // Deletes a key from the hash
@@ -259,11 +254,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
                     return None;
                 }
             }
-            if self.is_bin_either(i) {
-                None
-            } else {
-                Some(i)
-            }
+            if self.is_bin_either(i) { None } else { Some(i) }
         } else {
             None
         }
@@ -562,7 +553,7 @@ impl<K> FusedIterator for KIntoKeys<K> {}
 pub struct KDrain<'a, K> {
     map: *mut KHashRaw<K>,
     idx: KHInt,
-    phantom: PhantomData<&'a KHashRaw<K>>,
+    phantom: PhantomData<&'a mut KHashRaw<K>>,
 }
 
 impl<'a, K> KDrain<'a, K> {

@@ -11,6 +11,7 @@ pub struct BamRec {
     inner: bam1_t,
 }
 
+#[cfg(test)]
 mod tests {
     #![allow(unused)]
 

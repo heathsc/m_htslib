@@ -143,7 +143,7 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
 
 pub struct KHashMap<'a, K, V> {
     inner: *mut KHashMapRaw<K, V>,
-    phantom: PhantomData<&'a KHashMapRaw<K, V>>,
+    phantom: PhantomData<&'a mut KHashMapRaw<K, V>>,
 }
 
 impl<K, V> Deref for KHashMap<'_, K, V> {

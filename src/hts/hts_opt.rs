@@ -41,7 +41,7 @@ unsafe extern "C" {
 #[repr(C)]
 pub struct HtsOpt<'a> {
     inner: *mut HtsOptRaw,
-    phantom: PhantomData<&'a HtsOptRaw>,
+    phantom: PhantomData<&'a mut HtsOptRaw>,
 }
 
 impl Deref for HtsOpt<'_> {

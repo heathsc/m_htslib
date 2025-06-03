@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use libc::{c_char, c_int};
 
-use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
+use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP};
 use crate::{
     ParseINumError, SamError,
     base::Base,
@@ -20,8 +20,7 @@ impl BamRec {
         cb: &mut CigarBuf,
         hash: &mut HashSet<[u8; 2]>,
     ) -> Result<(), SamError> {
-        self.inner.l_data = 0;
-        self.inner.core = bam1_core_t::default();
+        self.clear();
         hash.clear();
 
         for (ix, s) in p.split(|c| *c == b'\t').enumerate() {
@@ -314,6 +313,7 @@ impl SamParser {
     }
 }
 
+#[cfg(test)]
 mod test {
     #[allow(unused)]
     use super::*;

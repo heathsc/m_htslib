@@ -5,12 +5,13 @@ use std::{
     ffi::CStr,
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 use crate::{
     hts::{
-        hfile::{HFile, HFileRaw},
         HtsTPool,
+        hfile::{HFile, HFileRaw},
     },
     kstring::KString,
 };
@@ -444,8 +445,8 @@ pub enum BgzfCompression {
 }
 
 pub struct Bgzf<'a> {
-    inner: *mut BgzfRaw,
-    phantom: PhantomData<&'a BgzfRaw>,
+    inner: NonNull<BgzfRaw>,
+    phantom: PhantomData<&'a mut BgzfRaw>,
 }
 
 impl Deref for Bgzf<'_> {
@@ -453,14 +454,14 @@ impl Deref for Bgzf<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for Bgzf<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -470,7 +471,7 @@ unsafe impl Sync for Bgzf<'_> {}
 impl Drop for Bgzf<'_> {
     fn drop(&mut self) {
         unsafe {
-            bgzf_close(self.inner);
+            bgzf_close(self.deref_mut());
         };
     }
 }
@@ -513,13 +514,12 @@ impl Bgzf<'_> {
 
     #[inline]
     fn make_bgzf_file(fp: *mut BgzfRaw) -> Result<Self, BgzfError> {
-        if fp.is_null() {
-            Err(BgzfError::OpenError)
-        } else {
-            Ok(Self {
-                inner: fp,
+        match NonNull::new(fp) {
+            None => Err(BgzfError::OpenError),
+            Some(p) => Ok(Self {
+                inner: p,
                 phantom: PhantomData,
-            })
+            }),
         }
     }
 }

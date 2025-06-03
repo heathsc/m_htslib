@@ -2,6 +2,7 @@ use libc::c_int;
 use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 #[repr(C)]
@@ -11,28 +12,28 @@ pub struct HtsTPoolRaw {
 
 #[repr(C)]
 pub struct HtsTPool<'a> {
-    inner: *mut HtsTPoolRaw,
-    phantom: PhantomData<&'a HtsTPoolRaw>,
+    inner: NonNull<HtsTPoolRaw>,
+    phantom: PhantomData<&'a mut HtsTPoolRaw>,
 }
 
 impl Deref for HtsTPool<'_> {
     type Target = HtsTPoolRaw;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for HtsTPool<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
 impl Drop for HtsTPool<'_> {
     fn drop(&mut self) {
-        unsafe { hts_tpool_destroy(self.inner) }
+        unsafe { hts_tpool_destroy(self.deref_mut()) }
     }
 }
 
@@ -56,15 +57,10 @@ impl HtsTPoolRaw {
 impl HtsTPool<'_> {
     /// Creates a worker pool with n worker threads
     pub fn init(nthreads: usize) -> Option<Self> {
-        let tpool = unsafe { hts_tpool_init(nthreads as c_int) };
-        if tpool.is_null() {
-            None
-        } else {
-            Some(Self {
-                inner: tpool,
-                phantom: PhantomData,
-            })
-        }
+        NonNull::new(unsafe { hts_tpool_init(nthreads as c_int) }).map(|tpool| Self {
+            inner: tpool,
+            phantom: PhantomData,
+        })
     }
 }
 

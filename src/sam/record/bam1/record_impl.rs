@@ -8,7 +8,7 @@ use crate::{
 
 use libc::c_int;
 
-use super::{BAM_FMUNMAP, BAM_FUNMAP};
+use super::{BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
 
 impl BamRec {
     #[inline]
@@ -16,6 +16,12 @@ impl BamRec {
         Self::default()
     }
 
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.l_data = 0;
+        self.inner.core = bam1_core_t::default();
+    }
+    
     #[inline]
     pub fn copy(&self, dst: &mut Self) {
         self.inner.copy(&mut dst.inner)

@@ -7,6 +7,7 @@ pub mod base;
 pub mod bgzf;
 pub mod cram;
 pub mod error;
+pub mod faidx;
 pub mod hts;
 pub(crate) mod int_utils;
 pub mod khash;

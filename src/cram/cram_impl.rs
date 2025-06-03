@@ -10,6 +10,7 @@ use std::{
     ffi::CStr,
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 #[repr(C)]
@@ -110,8 +111,8 @@ impl CramFdRaw {
 }
 
 pub struct CramFd<'a> {
-    inner: *mut CramFdRaw,
-    phantom: PhantomData<&'a CramFdRaw>,
+    inner: NonNull<CramFdRaw>,
+    phantom: PhantomData<&'a mut CramFdRaw>,
 }
 
 impl Deref for CramFd<'_> {
@@ -119,14 +120,14 @@ impl Deref for CramFd<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for CramFd<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -136,7 +137,7 @@ unsafe impl Sync for CramFd<'_> {}
 impl Drop for CramFd<'_> {
     fn drop(&mut self) {
         unsafe {
-            cram_close(self.inner);
+            cram_close(self.deref_mut());
         };
     }
 }
@@ -153,13 +154,14 @@ impl CramFd<'_> {
     }
     #[inline]
     fn make_cram_file(fp: *mut CramFdRaw) -> Result<Self, CramError> {
-        if fp.is_null() {
-            Err(CramError::OpenError)
-        } else {
-            Ok(Self {
-                inner: fp,
-                phantom: PhantomData,
-            })
+        match NonNull::new(fp) {
+            Some(p) => {
+                Ok(Self {
+                    inner: p,
+                    phantom: PhantomData,
+                })
+            }
+            None => Err(CramError::OpenError)
         }
     }
 }

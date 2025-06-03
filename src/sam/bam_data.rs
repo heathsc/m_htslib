@@ -30,6 +30,20 @@ struct BDState {
     seq_len: i32, // Length in bases (= length of quality data record)
 }
 
+/// Actions for ['BamRec'] ['swap_data']
+/// 
+/// This swaps the bam data segment from a BamRec with the data from a BamData. The action
+/// parameters describes what is done with the data segment recovered by the BamRec
+///
+/// [`swap_data`]: BamRec::swap_data
+#[derive(Debug, Copy, Clone)]
+pub(super) enum BDAction {
+    Ignore,                    // The BamRec is cleared (empty record)
+    Replace(BDState, BDMask),  // The metadata for the data segment is copied from the BamData
+    Merge(BDState, BDMask),    // The BamData and BamRec data segments are merged. Individual segments replaced except the Aux segment which is merged.
+}
+
+#[cfg(test)]
 mod tests {
     #![allow(unused)]
 

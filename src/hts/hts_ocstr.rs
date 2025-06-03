@@ -2,11 +2,14 @@ use libc::{c_char, c_void};
 use std::{ffi::CStr, marker::PhantomData};
 
 /// Owned CStr
-/// The difference with CString is that the memory was allocated with libc::free(), and so needs
+/// The difference with CString is that the memory was allocated with libc::malloc(), and so needs
 /// to be deallocated using libc::free().  An OCStr can only be made using `OCStr::from_ptr`, using
 /// a valid pointer to C string allocated from C code.  Note that this a read only view of the C string.
 ///
 /// We implement Deref so that it will inherit the methods from CStr
+///
+/// Unlike the other wrapped htslib types, here we only provide non-mutable references so the PhatomData field is
+/// indicates we are holding a non-mutable reference for c_char
 pub struct OCStr<'a> {
     inner: *const c_char,
     phantom: PhantomData<&'a c_char>,

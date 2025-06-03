@@ -418,6 +418,7 @@ impl<'a> Iterator for BamAuxIter<'a> {
 
 impl FusedIterator for BamAuxIter<'_> {}
 
+#[cfg(test)]
 mod tests {
     #![allow(unused)]
 

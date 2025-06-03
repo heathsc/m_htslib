@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Formatter},
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    ptr,
+    ptr::{self, NonNull},
 };
 
 use super::sam_error::SamError;
@@ -491,8 +491,8 @@ impl SamHdrRaw {
 /// inner is always non-null, but we don't use NonNull<> here because
 /// we don't want to assume Covariance.
 pub struct SamHdr<'a> {
-    inner: *mut SamHdrRaw,
-    phantom: PhantomData<&'a SamHdrRaw>,
+    inner: NonNull<SamHdrRaw>,
+    phantom: PhantomData<&'a mut SamHdrRaw>,
 }
 
 impl Deref for SamHdr<'_> {
@@ -500,14 +500,14 @@ impl Deref for SamHdr<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for SamHdr<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -522,7 +522,7 @@ unsafe impl Sync for SamHdr<'_> {}
 
 impl Drop for SamHdr<'_> {
     fn drop(&mut self) {
-        unsafe { sam_hdr_destroy(self.inner) };
+        unsafe { sam_hdr_destroy(self.deref_mut()) };
     }
 }
 
@@ -540,7 +540,7 @@ impl SamHdr<'_> {
     }
 
     pub fn try_dup(&self) -> Result<Self, SamError> {
-        Self::make_sam_hdr(unsafe { sam_hdr_dup(self.inner) }, SamError::OutOfMemory)
+        Self::make_sam_hdr(unsafe { sam_hdr_dup(self.deref()) }, SamError::OutOfMemory)
     }
 
     pub fn parse(text: &CStr) -> Result<Self, SamError> {
@@ -558,13 +558,12 @@ impl SamHdr<'_> {
     }
 
     fn make_sam_hdr(hdr: *mut SamHdrRaw, e: SamError) -> Result<Self, SamError> {
-        if hdr.is_null() {
-            Err(e)
-        } else {
-            Ok(Self {
+        match NonNull::new(hdr) {
+            None => Err(e),
+            Some(hdr) => Ok(Self {
                 inner: hdr,
                 phantom: PhantomData,
-            })
+            }),
         }
     }
 }

@@ -88,7 +88,7 @@ impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
 
 pub struct KHashSet<'a, K> {
     inner: *mut KHashSetRaw<K>,
-    phantom: PhantomData<&'a KHashSetRaw<K>>,
+    phantom: PhantomData<&'a mut KHashSetRaw<K>>,
 }
 
 impl<K> Deref for KHashSet<'_, K> {

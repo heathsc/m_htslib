@@ -1,22 +1,24 @@
 use c2rust_bitfields::BitfieldStruct;
 use libc::{c_char, c_int, c_uchar};
-use std::marker::PhantomData;
+
 use std::{
-    ffi::{c_void, CStr},
+    ffi::{CStr, c_void},
+    marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 use super::{
     hfile::{HFile, HFileRaw},
-    hts_format::{hts_file_set_opt, HtsFmtOption, HtsFormat},
+    hts_format::{HtsFmtOption, HtsFormat, hts_file_set_opt},
     hts_idx::HtsIdxRaw,
     hts_opt::HtsOptRaw,
     hts_thread_pool::HtsThreadPool,
 };
 
 use crate::{
-    bgzf::BgzfRaw, cram::CramFdRaw, hts::hts_opt::HtsOpt, kstring::KString,
-    sam::sam_hdr::SamHdrRaw, HtsError,
+    HtsError, bgzf::BgzfRaw, cram::CramFdRaw, hts::hts_opt::HtsOpt, kstring::KString,
+    sam::sam_hdr::SamHdrRaw,
 };
 
 #[repr(C)]
@@ -167,8 +169,8 @@ impl HtsFileRaw {
 }
 
 pub struct HtsFile<'a> {
-    inner: *mut HtsFileRaw,
-    phantom: PhantomData<&'a HtsFileRaw>,
+    inner: NonNull<HtsFileRaw>,
+    phantom: PhantomData<&'a mut HtsFileRaw>,
 }
 
 impl Deref for HtsFile<'_> {
@@ -176,14 +178,14 @@ impl Deref for HtsFile<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for HtsFile<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -192,7 +194,7 @@ unsafe impl Sync for HtsFile<'_> {}
 
 impl Drop for HtsFile<'_> {
     fn drop(&mut self) {
-        unsafe { hts_close(self.inner) };
+        unsafe { hts_close(self.deref_mut()) };
     }
 }
 
@@ -281,13 +283,12 @@ impl HtsFile<'_> {
     }
 
     fn mk_hts_file(fp: *mut HtsFileRaw) -> Result<Self, HtsError> {
-        if fp.is_null() {
-            Err(HtsError::FileOpenError)
-        } else {
-            Ok(Self {
-                inner: fp,
+        match NonNull::new(fp) {
+            None => Err(HtsError::FileOpenError),
+            Some(p) => Ok(Self {
+                inner: p,
                 phantom: PhantomData,
-            })
+            }),
         }
     }
 }

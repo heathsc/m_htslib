@@ -4,8 +4,10 @@ use std::{ffi::CStr, ptr::copy_nonoverlapping};
 pub mod aux;
 pub mod aux_error;
 pub mod aux_iter;
+pub mod bam_data_api;
 pub mod bam_type_code;
 pub mod parse;
+
 mod record_impl;
 mod rust_impl;
 

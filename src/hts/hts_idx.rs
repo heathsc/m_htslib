@@ -3,6 +3,7 @@ use std::{
     ffi::CStr,
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 use super::{
@@ -85,7 +86,7 @@ unsafe extern "C" {
     ) -> *mut HtsIdxRaw;
     fn hts_idx_get_meta(idx: *const HtsIdxRaw, l_meta: *mut u32) -> *const u8;
     fn hts_idx_set_meta(idx: *mut HtsIdxRaw, l_meta: u32, meta: *const u8, is_copy: c_int)
-        -> c_int;
+    -> c_int;
     fn hts_idx_get_stat(
         idx: *const HtsIdxRaw,
         tid: c_int,
@@ -298,8 +299,8 @@ impl HtsIdxRaw {
 }
 
 pub struct HtsIdx<'a> {
-    inner: *mut HtsIdxRaw,
-    phantom: PhantomData<&'a HtsIdxRaw>,
+    inner: NonNull<HtsIdxRaw>,
+    phantom: PhantomData<&'a mut HtsIdxRaw>,
 }
 
 impl Deref for HtsIdx<'_> {
@@ -307,14 +308,14 @@ impl Deref for HtsIdx<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for HtsIdx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -323,7 +324,7 @@ unsafe impl Sync for HtsIdx<'_> {}
 
 impl Drop for HtsIdx<'_> {
     fn drop(&mut self) {
-        unsafe { hts_idx_destroy(self.inner) };
+        unsafe { hts_idx_destroy(self.deref_mut()) };
     }
 }
 
@@ -438,13 +439,12 @@ impl HtsIdx<'_> {
     }
 
     fn mk_hts_idx(p: *mut HtsIdxRaw, err: HtsError) -> Result<Self, HtsError> {
-        if p.is_null() {
-            Err(err)
-        } else {
-            Ok(Self {
+        match NonNull::new(p) {
+            None => Err(err),
+            Some(p) => Ok(Self {
                 inner: p,
                 phantom: PhantomData,
-            })
+            }),
         }
     }
 }

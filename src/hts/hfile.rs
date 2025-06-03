@@ -1,13 +1,13 @@
 use c2rust_bitfields::BitfieldStruct;
-use libc::{c_char, c_int, c_uint, off_t, size_t, ssize_t, EOF};
+use libc::{EOF, c_char, c_int, c_uint, off_t, size_t, ssize_t};
 use std::{
-    ffi::{c_void, CStr},
+    ffi::{CStr, c_void},
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    ptr::null,
+    ptr::{NonNull, null},
 };
 
-use super::{hts_format::HtsFormat, Whence};
+use super::{Whence, hts_format::HtsFormat};
 use crate::{cstr_len, error::HtsError, kstring::KString};
 
 #[repr(C)]
@@ -112,11 +112,7 @@ impl HFileRaw {
             }
         } else {
             let c = unsafe { hgetc2(self) };
-            if c < 0 {
-                None
-            } else {
-                Some(c as c_char)
-            }
+            if c < 0 { None } else { Some(c as c_char) }
         }
     }
 
@@ -310,8 +306,8 @@ impl HFileRaw {
 /// inner is always non-null, but we don't use NonNull<> here because
 /// we don't want to assume Covariance.
 pub struct HFile<'a> {
-    inner: *mut HFileRaw,
-    phantom: PhantomData<&'a HFileRaw>,
+    inner: NonNull<HFileRaw>,
+    phantom: PhantomData<&'a mut HFileRaw>,
 }
 
 impl Deref for HFile<'_> {
@@ -319,14 +315,14 @@ impl Deref for HFile<'_> {
 
     fn deref(&self) -> &Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for HFile<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 
@@ -335,7 +331,7 @@ unsafe impl Sync for HFile<'_> {}
 
 impl Drop for HFile<'_> {
     fn drop(&mut self) {
-        unsafe { hclose(self.inner) };
+        unsafe { hclose(self.deref_mut()) };
     }
 }
 
@@ -360,19 +356,18 @@ impl HFile<'_> {
     }
 
     fn make_hfile(fp: *mut HFileRaw) -> Result<Self, HtsError> {
-        if fp.is_null() {
-            Err(HtsError::FileOpenError)
-        } else {
-            Ok(Self {
-                inner: fp,
+        match NonNull::new(fp) {
+            None => Err(HtsError::FileOpenError),
+            Some(p) => Ok(Self {
+                inner: p,
                 phantom: PhantomData,
-            })
+            }),
         }
     }
 
     pub(crate) fn into_raw_ptr(self) -> *mut HFileRaw {
-        let p = std::mem::ManuallyDrop::new(self);
-        p.inner
+        let mut p = std::mem::ManuallyDrop::new(self);
+        unsafe { p.inner.as_mut() }
     }
 }
 
