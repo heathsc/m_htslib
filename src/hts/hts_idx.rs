@@ -1,7 +1,6 @@
 use libc::{c_char, c_int, c_void};
 use std::{
     ffi::CStr,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -298,12 +297,11 @@ impl HtsIdxRaw {
     }
 }
 
-pub struct HtsIdx<'a> {
+pub struct HtsIdx {
     inner: NonNull<HtsIdxRaw>,
-    phantom: PhantomData<&'a mut HtsIdxRaw>,
 }
 
-impl Deref for HtsIdx<'_> {
+impl Deref for HtsIdx {
     type Target = HtsIdxRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -312,23 +310,23 @@ impl Deref for HtsIdx<'_> {
     }
 }
 
-impl DerefMut for HtsIdx<'_> {
+impl DerefMut for HtsIdx {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { self.inner.as_mut() }
     }
 }
 
-unsafe impl Send for HtsIdx<'_> {}
-unsafe impl Sync for HtsIdx<'_> {}
+unsafe impl Send for HtsIdx {}
+unsafe impl Sync for HtsIdx {}
 
-impl Drop for HtsIdx<'_> {
+impl Drop for HtsIdx {
     fn drop(&mut self) {
         unsafe { hts_idx_destroy(self.deref_mut()) };
     }
 }
 
-impl HtsIdx<'_> {
+impl HtsIdx {
     /// Create a BAI/CSI/TBI type index structure
     ///
     /// `n` - Initial number of targets
@@ -443,7 +441,6 @@ impl HtsIdx<'_> {
             None => Err(err),
             Some(p) => Ok(Self {
                 inner: p,
-                phantom: PhantomData,
             }),
         }
     }

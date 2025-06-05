@@ -170,7 +170,9 @@ impl HtsFileRaw {
 
 pub struct HtsFile<'a> {
     inner: NonNull<HtsFileRaw>,
-    phantom: PhantomData<&'a mut HtsFileRaw>,
+    // As we can (and often do) attach a threadpool to an htsfile, then we need
+    // to track the lifetime of this
+    phantom: PhantomData<&'a HtsThreadPool>,
 }
 
 impl Deref for HtsFile<'_> {

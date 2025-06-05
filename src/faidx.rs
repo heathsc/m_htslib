@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use std::ptr::NonNull;
 
 pub mod faidx_error;
 pub mod faidx_impl;
@@ -6,9 +6,8 @@ pub mod faidx_impl;
 use faidx_impl::FaidxRaw;
 
 #[derive(Debug)]
-pub struct Faidx<'a> {
+pub struct Faidx {
     inner: NonNull<FaidxRaw>,
-    phantom: PhantomData<&'a mut FaidxRaw>,
 }
 
 pub struct Sequence {

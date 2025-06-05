@@ -144,7 +144,7 @@ pub enum MultiSeqOpt {
     Multi = 1,
 }
 
-pub enum HtsFmtOption<'a, 'b> {
+pub enum HtsFmtOption<'a> {
     CramDecodeMd(c_int),
     CramPrefix(&'a CStr),
     CramVerbosity,
@@ -169,14 +169,14 @@ pub enum HtsFmtOption<'a, 'b> {
     CramVersion(&'a CStr),
     CramMultiSeq(MultiSeqOpt),
     CramNThreads(c_int),
-    CramThreadPool(&'a mut HtsThreadPool<'b>),
+    CramThreadPool(&'a mut HtsThreadPool),
     CramRequiredFields(c_int),
     CramStoreMd(bool),
     CramStoreNm(bool),
 
     HtsNThreads(c_int),
     HtsBlockSize(c_int),
-    HtsThreadPool(&'a mut HtsThreadPool<'b>),
+    HtsThreadPool(&'a mut HtsThreadPool),
     HtsCacheSize(c_int),
     HtsCompressionLevel(c_int),
     HtsProfile(HtsProfileOption),

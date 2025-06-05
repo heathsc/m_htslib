@@ -21,6 +21,8 @@ pub use htsfile::*;
 use hts_error::HtsError;
 use hts_ocstr::OCStr;
 
+use crate::LIBHTS;
+
 pub type HtsPos = i64;
 
 #[repr(C)]
@@ -46,18 +48,22 @@ unsafe extern "C" {
 }
 
 pub fn version() -> &'static CStr {
+    let _guard = LIBHTS.read();
     unsafe { CStr::from_ptr(hts_version()) }
 }
 
 pub fn features() -> u32 {
+    let _guard = LIBHTS.read();
     unsafe { hts_features() as u32 }
 }
 
 pub fn test_feature(feature: HtsFeature) -> &'static CStr {
+    let _guard = LIBHTS.read();
     unsafe { CStr::from_ptr(hts_test_feature(1 << (feature as c_uint))) }
 }
 
 pub fn feature_string() -> &'static CStr {
+    let _guard = LIBHTS.read();
     unsafe { CStr::from_ptr(hts_feature_string()) }
 }
 
@@ -79,11 +85,18 @@ pub fn read_list(s: &CStr, is_file: bool) -> Result<Box<[OCStr]>, HtsError> {
     try_make_boxed_slice(p, n)
 }
 
-pub fn set_log_level(level: HtsLogLevel) {
-    unsafe { hts_set_log_level(level) }
+/// Sets log level for htslib, returning previous log level
+pub fn set_log_level(level: HtsLogLevel) -> HtsLogLevel {
+    let _guard = LIBHTS.write();
+    unsafe { 
+        let old = hts_get_log_level();
+        hts_set_log_level(level);
+        old
+    }
 }
 
 pub fn get_log_level() -> HtsLogLevel {
+    let _guard = LIBHTS.read();
     unsafe { hts_get_log_level() }
 }
 

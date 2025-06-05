@@ -1,6 +1,5 @@
 use std::{
     ffi::{CStr, CString},
-    marker::PhantomData,
     ops::{Deref, DerefMut},
     os::unix::ffi::OsStrExt,
     path::Path,
@@ -101,10 +100,9 @@ impl FaidxRaw {
     }
 }
 
-unsafe impl Send for Faidx<'_> {}
-unsafe impl Sync for Faidx<'_> {}
+unsafe impl Send for Faidx {}
 
-impl Deref for Faidx<'_> {
+impl Deref for Faidx {
     type Target = FaidxRaw;
     #[inline]
     fn deref(&self) -> &FaidxRaw {
@@ -112,15 +110,15 @@ impl Deref for Faidx<'_> {
     }
 }
 
-impl DerefMut for Faidx<'_> {
+impl DerefMut for Faidx {
     #[inline]
     fn deref_mut(&mut self) -> &mut FaidxRaw {
         unsafe { self.inner.as_mut() }
     }
 }
 
-impl<'a> Faidx<'a> {
-    pub fn load<S: AsRef<Path>>(name: S) -> Result<Faidx<'a>, FaidxError> {
+impl Faidx {
+    pub fn load<S: AsRef<Path>>(name: S) -> Result<Faidx, FaidxError> {
         // If this fails then it is an error in the Rust std library!
         let cname = CString::new(name.as_ref().as_os_str().as_bytes()).unwrap();
 
@@ -128,19 +126,17 @@ impl<'a> Faidx<'a> {
             None => Err(FaidxError::ErrorLoadingFaidx),
             Some(idx) => Ok(Faidx {
                 inner: idx,
-                phantom: PhantomData,
             }),
         }
     }
 
-    pub fn load_or_create<S: AsRef<Path>>(name: S) -> Result<Faidx<'a>, FaidxError> {
+    pub fn load_or_create<S: AsRef<Path>>(name: S) -> Result<Faidx, FaidxError> {
         let cname = CString::new(name.as_ref().as_os_str().as_bytes()).unwrap();
 
         match NonNull::new(unsafe { fai_load(cname.as_ptr()) }) {
             None => Err(FaidxError::ErrorLoadingFaidx),
             Some(idx) => Ok(Faidx {
                 inner: idx,
-                phantom: PhantomData,
             }),
         }
     }

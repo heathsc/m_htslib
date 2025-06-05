@@ -433,7 +433,7 @@ mod tests {
         sam_hdr_line,
     };
 
-    fn make_header<'a>() -> Result<SamHdr<'a>, SamError> {
+    fn make_header() -> Result<SamHdr, SamError> {
         let mut hdr = SamHdr::new();
         hdr.add_lines(c"@HD\tVN:1.6\tSO:coordinate")?;
         assert_eq!(hdr.length().unwrap(), 25);
