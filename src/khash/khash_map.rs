@@ -65,7 +65,7 @@ impl<K, V> KHashMapRaw<K, V> {
     }
 
     #[inline]
-    pub fn get_val(&self, i: u32) -> Option<&V> {
+    fn get_val(&self, i: u32) -> Option<&V> {
         if i < self.n_buckets() && !self.is_bin_either(i) {
             Some(unsafe { &*self.vals.add(i as usize) })
         } else {
@@ -179,9 +179,7 @@ impl<K, V> Default for KHashMap<K, V> {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
         };
         assert!(!inner.is_null(), "Out of memory error");
-        Self {
-            inner,
-        }
+        Self { inner }
     }
 }
 
@@ -228,9 +226,7 @@ impl<'a, K, V> KHashMap<K, V> {
             !inner.is_null(),
             "KHashMap::from_raw_ptr called with null pointer"
         );
-        Self {
-            inner,
-        }
+        Self { inner }
     }
 
     #[inline]
@@ -299,9 +295,7 @@ pub struct KIterMap<'a, K, V> {
 impl<'a, K, V> KIterMap<'a, K, V> {
     #[inline]
     unsafe fn as_ref(&self) -> &'a KHashMapRaw<K, V> {
-        unsafe {
-            &*self.map
-        }
+        unsafe { &*self.map }
     }
 }
 impl<'a, K, V> Iterator for KIterMap<'a, K, V> {
@@ -626,8 +620,35 @@ fn _insert_val<K, V>(map: &mut KHashMapRaw<K, V>, i: KHInt, key: K, mut val: V) 
 mod tests {
     use super::*;
     use crate::kstring::KString;
-    
+
     use std::{ffi::CStr, str::FromStr};
+
+    #[test]
+    fn hash_cs_int() -> Result<(), KHashError> {
+        let mut h: KHashMap<*const libc::c_char, KHInt> = KHashMap::new();
+        assert_eq!(
+            h.insert(c"xx".to_bytes_with_nul().as_ptr() as *const i8, 200)?,
+            None
+        );
+        assert_eq!(
+            h.insert(c"yy".to_bytes_with_nul().as_ptr() as *const i8, 42)?,
+            None
+        );
+        assert_eq!(
+            h.insert(c"zz".to_bytes_with_nul().as_ptr() as *const i8, 2050)?,
+            None
+        );
+        assert_eq!(
+            h.insert(c"yy".to_bytes_with_nul().as_ptr() as *const i8, 40)?,
+            Some(42)
+        );
+
+        assert_eq!(
+            h.get(&(c"yy".to_bytes_with_nul().as_ptr() as *const i8)),
+            Some(&40)
+        );
+        Ok(())
+    }
 
     #[test]
     fn hash_int_cstr() -> Result<(), KHashError> {
@@ -699,6 +720,10 @@ mod tests {
     impl KHashFunc for Test {
         fn hash(&self) -> u32 {
             hash_u8_slice(self.s.as_bytes())
+        }
+        
+        fn equals(&self, other: &Self) -> bool {
+            self.eq(other)
         }
     }
 

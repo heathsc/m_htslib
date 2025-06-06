@@ -8,12 +8,34 @@ use std::{
 
 use libc::{c_char, c_int, c_void, free};
 
-use crate::{from_c, hts::HtsPos, FaidxError};
+use crate::{
+    FaidxError,
+    bgzf::BgzfRaw,
+    from_c,
+    hts::HtsPos,
+    khash::{KHashMap, KHashMapRaw},
+};
 
 use super::{Faidx, Sequence};
 
+#[derive(Debug)]
+#[repr(C)]
+pub struct Faidx1Raw {
+    id: c_int,
+    line_len: u32,
+    line_blen: u32,
+    len: u64,
+    seq_offset: u64,
+    qual_offset: u64,
+}
+
 #[repr(C)]
 pub struct FaidxRaw {
+    bgzf: *mut BgzfRaw,
+    n: c_int,
+    m: c_int,
+    name: *mut *mut c_char,
+    hash: *mut KHashMapRaw<*const c_char, Faidx1Raw>,
     _unused: [u8; 0],
 }
 
@@ -27,7 +49,7 @@ unsafe extern "C" {
     ) -> *mut FaidxRaw;
     fn faidx_nseq(fai: *const FaidxRaw) -> c_int;
     fn faidx_iseq(fai: *const FaidxRaw, n: c_int) -> *const c_char;
-    fn faidx_seq_len(fai: *const FaidxRaw, seq: *const c_char) -> c_int;
+    fn faidx_seq_len64(fai: *const FaidxRaw, seq: *const c_char) -> HtsPos;
     fn faidx_fetch_seq64(
         fai: *const FaidxRaw,
         cname: *const c_char,
@@ -51,7 +73,7 @@ impl FaidxRaw {
 
     pub fn seq_len<S: AsRef<CStr>>(&self, cname: S) -> Option<usize> {
         let cname = cname.as_ref();
-        let len = unsafe { faidx_seq_len(self, cname.as_ref().as_ptr()) };
+        let len = unsafe { faidx_seq_len64(self, cname.as_ref().as_ptr()) };
         if len < 0 { None } else { Some(len as usize) }
     }
 
@@ -124,9 +146,7 @@ impl Faidx {
 
         match NonNull::new(unsafe { fai_load3(cname.as_ptr(), null(), null(), 0) }) {
             None => Err(FaidxError::ErrorLoadingFaidx),
-            Some(idx) => Ok(Faidx {
-                inner: idx,
-            }),
+            Some(idx) => Ok(Faidx { inner: idx }),
         }
     }
 
@@ -135,10 +155,16 @@ impl Faidx {
 
         match NonNull::new(unsafe { fai_load(cname.as_ptr()) }) {
             None => Err(FaidxError::ErrorLoadingFaidx),
-            Some(idx) => Ok(Faidx {
-                inner: idx,
-            }),
+            Some(idx) => Ok(Faidx { inner: idx }),
         }
+    }
+
+    pub fn seq_id(&self, s: &CStr) -> Option<usize> {
+        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) };        
+        hash.get(&(s.to_bytes_with_nul().as_ptr() as *const c_char))
+            .map(|f| {
+                f.id as usize
+            })
     }
 }
 
@@ -175,5 +201,21 @@ impl Sequence {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_faidx() {
+        let h = Faidx::load("test/xx.fa").unwrap();
+        let l = h.seq_len(c"yy");
+        assert_eq!(l, Some(20));
+        assert_eq!(h.nseq(), 5);
+        assert_eq!(h.iseq(1), Some(c"yy"));
+        assert_eq!(h.seq_id(c"yy"), Some(1));
     }
 }

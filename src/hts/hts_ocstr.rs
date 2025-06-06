@@ -10,6 +10,7 @@ use std::{ffi::CStr, marker::PhantomData};
 ///
 /// Unlike the other wrapped htslib types, here we only provide non-mutable references so the PhatomData field is
 /// indicates we are holding a non-mutable reference for c_char
+#[repr(C)]
 pub struct OCStr<'a> {
     inner: *const c_char,
     phantom: PhantomData<&'a c_char>,
@@ -20,6 +21,14 @@ impl Drop for OCStr<'_> {
         unsafe { libc::free(self.inner as *mut c_void) }
     }
 }
+
+impl PartialEq for OCStr<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { libc::strcmp(self.inner, other.inner) == 0 }
+    }
+}
+
+impl Eq for OCStr<'_> {}
 
 impl OCStr<'_> {
     /// Wrap a raw ptr to a C string in a OCStr.
@@ -61,9 +70,9 @@ pub(crate) unsafe fn cstr_array_into_boxed_slice<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
     use super::*;
-    
+    use std::ffi::CString;
+
     fn make_c_allocated_string(s: &str) -> *mut c_char {
         let cs = CString::new(s).unwrap();
         let ptr = unsafe { libc::strdup(cs.as_ptr() as *mut c_char) };

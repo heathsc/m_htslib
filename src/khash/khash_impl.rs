@@ -184,7 +184,7 @@ impl<K> KHashRaw<K> {
         }
     }
     #[inline]
-    pub(super) fn n_buckets(&self) -> KHInt {
+    pub(crate) fn n_buckets(&self) -> KHInt {
         self.n_buckets
     }
 
@@ -197,7 +197,7 @@ impl<K> KHashRaw<K> {
         self.size
     }
     #[inline]
-    pub(super) fn flags(&mut self) -> *mut u32 {
+    pub(crate) fn flags(&mut self) -> *mut u32 {
         self.flags
     }
 
@@ -237,7 +237,7 @@ impl<K> KHashRaw<K> {
     }
 }
 
-impl<K: KHashFunc + PartialEq> KHashRaw<K> {
+impl<K: KHashFunc> KHashRaw<K> {
     pub(super) fn _find(&self, key: &K) -> Option<KHInt> {
         if self.n_buckets > 0 {
             let mut step = 0;
@@ -246,7 +246,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             let mut i = k & mask;
             let last = i;
             while !self.is_bin_empty(i)
-                && (self.is_bin_del(i) || key != unsafe { self.get_key_unchecked(i) })
+                && (self.is_bin_del(i) || unsafe { !key.equals(self.get_key_unchecked(i)) })
             {
                 step += 1;
                 i = (i + step) & mask;
@@ -289,7 +289,7 @@ impl<K: KHashFunc + PartialEq> KHashRaw<K> {
             let last = i;
             let mut step = 0;
             while !self.is_bin_empty(i)
-                && (self.is_bin_del(i) || key != unsafe { self.get_key_unchecked(i) })
+                && (self.is_bin_del(i) || !key.equals(unsafe { self.get_key_unchecked(i) }))
             {
                 if self.is_bin_del(i) {
                     site = i
