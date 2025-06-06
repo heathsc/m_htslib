@@ -12,7 +12,10 @@ use crate::{
     FaidxError,
     bgzf::BgzfRaw,
     from_c,
-    hts::HtsPos,
+    hts::{
+        HtsPos,
+        traits::{IdMap, SeqId},
+    },
     khash::{KHashMap, KHashMapRaw},
 };
 
@@ -60,18 +63,18 @@ unsafe extern "C" {
 }
 
 impl FaidxRaw {
-    pub fn nseq(&self) -> usize {
+    fn nseq(&self) -> usize {
         let l = unsafe { faidx_nseq(self) };
         l as usize
     }
-    pub fn iseq(&self, i: usize) -> Option<&CStr> {
+    fn iseq(&self, i: usize) -> Option<&CStr> {
         if i > self.nseq() {
             panic!("Sequence ID {} out of range", i);
         }
         from_c(unsafe { faidx_iseq(self, i as libc::c_int) })
     }
 
-    pub fn seq_len<S: AsRef<CStr>>(&self, cname: S) -> Option<usize> {
+    pub fn get_seq_len<S: AsRef<CStr>>(&self, cname: S) -> Option<usize> {
         let cname = cname.as_ref();
         let len = unsafe { faidx_seq_len64(self, cname.as_ref().as_ptr()) };
         if len < 0 { None } else { Some(len as usize) }
@@ -88,7 +91,7 @@ impl FaidxRaw {
         y: Option<usize>,
     ) -> Result<Sequence, FaidxError> {
         let cname = cname.as_ref();
-        if let Some(seq_len) = self.seq_len(cname) {
+        if let Some(seq_len) = self.get_seq_len(cname) {
             let y = y.map(|z| z.min(seq_len)).unwrap_or(seq_len);
             let x = x.saturating_sub(1);
             if y <= x {
@@ -158,13 +161,27 @@ impl Faidx {
             Some(idx) => Ok(Faidx { inner: idx }),
         }
     }
+}
 
-    pub fn seq_id(&self, s: &CStr) -> Option<usize> {
-        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) };        
+impl SeqId for Faidx {
+    fn seq_id(&self, s: &CStr) -> Option<usize> {
+        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) };
         hash.get(&(s.to_bytes_with_nul().as_ptr() as *const c_char))
-            .map(|f| {
-                f.id as usize
-            })
+            .map(|f| f.id as usize)
+    }
+}
+    
+impl IdMap for Faidx {
+    fn num_seqs(&self) -> usize {
+        self.nseq()
+    }
+    
+    fn seq_name(&self, i: usize) -> Option<&CStr> {
+        self.iseq(i)
+    }
+    
+    fn seq_len(&self, i: usize) -> Option<usize> {
+        self.iseq(i).and_then(|s| self.get_seq_len(s))
     }
 }
 
@@ -204,18 +221,19 @@ impl Sequence {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_faidx() {
         let h = Faidx::load("test/xx.fa").unwrap();
-        let l = h.seq_len(c"yy");
+        let l = h.get_seq_len(c"yy");
         assert_eq!(l, Some(20));
-        assert_eq!(h.nseq(), 5);
-        assert_eq!(h.iseq(1), Some(c"yy"));
+        let l1 = h.seq_len(1);
+        assert_eq!(l, l1);
+        assert_eq!(h.num_seqs(), 5);
+        assert_eq!(h.seq_name(1), Some(c"yy"));
         assert_eq!(h.seq_id(c"yy"), Some(1));
     }
 }
