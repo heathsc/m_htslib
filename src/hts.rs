@@ -9,6 +9,7 @@ pub mod hts_ocstr;
 pub mod hts_opt;
 pub mod hts_thread_pool;
 pub mod htsfile;
+pub mod traits;
 
 pub use hfile::*;
 pub use hts_format::*;

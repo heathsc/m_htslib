@@ -2,12 +2,17 @@ use libc::{c_char, c_int, c_void, size_t};
 use std::{
     ffi::{CStr, CString},
     fmt::{self, Formatter},
-    ops::{Deref, DerefMut},
-    ptr::{self, NonNull},
+    ops::Deref,
+    ptr,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use super::sam_error::SamError;
-use crate::{cstr_len, from_c, hts::htsfile::HtsFileRaw, kstring::KString};
+use crate::{
+    cstr_len, from_c,
+    hts::{htsfile::HtsFileRaw, traits::*},
+    kstring::KString,
+};
 
 #[repr(C)]
 pub struct SamHrecsRaw {
@@ -248,7 +253,7 @@ unsafe extern "C" {
 
 impl SamHdrRaw {
     /// Writes the header to `hts_file`
-    pub fn write(&self, hts_file: &mut HtsFileRaw) -> Result<(), SamError> {
+    fn write(&self, hts_file: &mut HtsFileRaw) -> Result<(), SamError> {
         match unsafe { sam_hdr_write(hts_file as *mut HtsFileRaw, self) } {
             0 => Ok(()),
             _ => Err(SamError::FailedHeaderWrite),
@@ -257,7 +262,7 @@ impl SamHdrRaw {
 
     /// Returns the number of references in hte header
     #[inline]
-    pub fn nref(&self) -> usize {
+    fn nref(&self) -> usize {
         let l = unsafe { sam_hdr_nref(self) };
         assert!(l >= 0);
         l as usize
@@ -270,7 +275,7 @@ impl SamHdrRaw {
 
     /// Gets the name of the sequence corresponding to a target index
     #[inline]
-    pub fn tid2name(&self, i: usize) -> Option<&CStr> {
+    fn tid2name(&self, i: usize) -> Option<&CStr> {
         if self.check_idx(i) {
             from_c(unsafe { sam_hdr_tid2name(self, i as c_int) })
         } else {
@@ -279,7 +284,7 @@ impl SamHdrRaw {
     }
 
     /// Gets the length of the sequence corresponding to a target index
-    pub fn tid2len(&self, i: usize) -> Option<usize> {
+    fn tid2len(&self, i: usize) -> Option<usize> {
         if self.check_idx(i) {
             let len = unsafe { sam_hdr_tid2len(self, i as c_int) };
             assert!(len >= 0);
@@ -289,222 +294,85 @@ impl SamHdrRaw {
         }
     }
 
-    /// Gets the target index corresponding to a sequence name (if it exists in the header)
+    /// Gets the target index corresponding to a sequence name (if it exists in the header).
+    /// If self.hrecs is null then the header records are rebuilt
     #[inline]
-    pub fn name2tid(&mut self, cname: &CStr) -> Result<usize, SamError> {
-        let tid = unsafe { sam_hdr_name2tid(self, cname.as_ptr()) };
-        if tid < -1 {
+    fn name2tid_rebuild(&mut self, cname: &CStr) -> Result<usize, SamError> {
+        Self::check_tid(unsafe { sam_hdr_name2tid(self, cname.as_ptr()) })
+    }
+
+    fn check_tid(x: c_int) -> Result<usize, SamError> {
+        if x < -1 {
             Err(SamError::HeaderParseFailed)
-        } else if tid < 0 {
+        } else if x < 0 {
             Err(SamError::UnknownReference)
         } else {
-            Ok(tid as usize)
+            Ok(x as usize)
+        }
+    }
+
+    #[inline]
+    fn name2tid(&self, cname: &CStr) -> Result<usize, SamError> {
+        if self.hrecs.is_null() {
+            Err(SamError::HeaderNotParsed)
+        } else {
+            // if self.hrecs is not null, then sam_hdr_name2tid does not mutate the header
+            // but the signature requires a mut pointer so we will make one (yeuch!)
+            let p = self as *const SamHdrRaw as *mut SamHdrRaw;
+            Self::check_tid(unsafe { sam_hdr_name2tid(p, cname.as_ptr()) })
         }
     }
 
     /// Returns the current header txt.  Can be invalidated by a call to another header function
     #[inline]
-    pub fn text(&mut self) -> Option<&CStr> {
+    fn text(&mut self) -> Option<&CStr> {
         from_c(unsafe { sam_hdr_str(self) })
     }
 
     /// Returns length of header text
     #[inline]
-    pub fn length(&mut self) -> Result<usize, SamError> {
+    fn length(&mut self) -> Result<usize, SamError> {
         match unsafe { sam_hdr_length(self) } {
             size_t::MAX => Err(SamError::OperationFailed),
             l => Ok(l),
         }
     }
-
-    /// Add SAM header record(s) with optional new line.  If multiple lines are present (separated by newlines)
-    /// then they will be added in order
-    #[inline]
-    pub fn add_lines(&mut self, lines: &CStr) -> Result<(), SamError> {
-        match unsafe { sam_hdr_add_lines(self, lines.as_ptr(), cstr_len(lines) as size_t) } {
-            0 => Ok(()),
-            _ => Err(SamError::FailedAddHeaderLine),
-        }
-    }
-
-    pub fn add_line(&mut self, line: &SamHdrLine) -> Result<(), SamError> {
-        let nl = format!("{line}");
-        let cs = CString::new(nl.as_str()).map_err(|_| SamError::IllegalHeaderChars)?;
-        self.add_lines(&cs)
-    }
-
-    /*
-        pub fn add_pg(&mut self, name: &CStr, tag_values: &[SamHdrTagValue]) -> Result<(), SamError> {
-
-            // Check for ID, PP and PN tags in specified line
-            let mut id_tag = None;
-            let mut pp_tag = None;
-            let mut pn_tag = None;
-            for tv in tag_values {
-                match tv.tag {
-                    ['I', 'D'] => {
-                        if self
-                            .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
-                            .is_some()
-                        {
-                            return Err(SamError::PgIdTagExists);
-                        }
-                        id_tag = Some(tv.value())
-                    }
-                    ['P', 'P'] => {
-                        if self
-                            .find_line_id(c"PG", c"ID", tv.value_as_cstring()?.as_ref())
-                            .is_none()
-                        {
-                            return Err(SamError::PpRefTagMissing);
-                        }
-                        pp_tag = Some(tv.value())
-                    }
-                    ['P', 'N'] => pn_tag = Some(tv.value()),
-                    _ => (),
-                }
-            }
-
-            Ok(())
-        }
-    */
-
-    pub fn remove_except(
-        &mut self,
-        ln_type: &SamHdrType,
-        id: Option<SamHdrTagValue>,
-    ) -> Result<(), SamError> {
-        match if let Some(tv) = id {
-            unsafe {
-                sam_hdr_remove_except(
-                    self,
-                    ln_type.to_cstr().as_ptr(),
-                    tv.tag().as_ptr() as *const c_char,
-                    tv.value().as_ptr() as *const c_char,
-                )
-            }
-        } else {
-            unsafe {
-                sam_hdr_remove_except(self, ln_type.to_cstr().as_ptr(), ptr::null(), ptr::null())
-            }
-        } {
-            0 => Ok(()),
-            _ => Err(SamError::FailedRemoveHeaderLines),
-        }
-    }
-    pub fn remove(&mut self, ln_type: &SamHdrType) -> Result<(), SamError> {
-        self.remove_except(ln_type, None)
-    }
-    pub fn change_hd(&mut self, key: &CStr, val: Option<&CStr>) {
-        let val = if let Some(v) = val {
-            v.as_ptr()
-        } else {
-            ptr::null::<c_char>()
-        };
-        unsafe { sam_hdr_change_HD(self, key.as_ptr(), val) }
-    }
-    pub fn find_line_id(&mut self, typ: &CStr, id_key: &CStr, id_val: &CStr) -> Option<KString> {
-        let mut ks = KString::new();
-        if unsafe {
-            sam_hdr_find_line_id(
-                self,
-                typ.as_ptr(),
-                id_key.as_ptr(),
-                id_val.as_ptr(),
-                &mut ks,
-            ) == 0
-        } {
-            Some(ks)
-        } else {
-            None
-        }
-    }
-    pub fn find_line_pos(&mut self, typ: &CStr, pos: usize) -> Option<KString> {
-        let mut ks = KString::new();
-        if unsafe { sam_hdr_find_line_pos(self, typ.as_ptr(), pos as c_int, &mut ks) == 0 } {
-            Some(ks)
-        } else {
-            None
-        }
-    }
-    pub fn remove_line_id(
-        &mut self,
-        typ: &CStr,
-        id_key: &CStr,
-        id_val: &CStr,
-    ) -> Result<(), SamError> {
-        if unsafe {
-            sam_hdr_remove_line_id(self, typ.as_ptr(), id_key.as_ptr(), id_val.as_ptr()) == 0
-        } {
-            Ok(())
-        } else {
-            Err(SamError::OperationFailed)
-        }
-    }
-    pub fn remove_line_pos(&mut self, typ: &CStr, pos: usize) -> Result<(), SamError> {
-        if unsafe { sam_hdr_remove_line_pos(self, typ.as_ptr(), pos as c_int) == 0 } {
-            Ok(())
-        } else {
-            Err(SamError::OperationFailed)
-        }
-    }
-    pub fn find_tag_id(
-        &mut self,
-        typ: &CStr,
-        id_key: &CStr,
-        id_val: &CStr,
-        key: &CStr,
-    ) -> Option<KString> {
-        let mut ks = KString::new();
-        if unsafe {
-            sam_hdr_find_tag_id(
-                self,
-                typ.as_ptr(),
-                id_key.as_ptr(),
-                id_val.as_ptr(),
-                key.as_ptr(),
-                &mut ks,
-            ) == 0
-        } {
-            Some(ks)
-        } else {
-            None
-        }
-    }
-    pub fn find_tag_pos(&mut self, typ: &CStr, pos: usize, key: &CStr) -> Option<KString> {
-        let mut ks = KString::new();
-        if unsafe {
-            sam_hdr_find_tag_pos(self, typ.as_ptr(), pos as c_int, key.as_ptr(), &mut ks) == 0
-        } {
-            Some(ks)
-        } else {
-            None
-        }
-    }
-    pub fn count_lines(&mut self, typ: &CStr) -> Option<usize> {
-        let n = unsafe { sam_hdr_count_lines(self, typ.as_ptr()) };
-        if n >= 0 { Some(n as usize) } else { None }
-    }
 }
 
+/// Header from SAM/BAM/CRAM file
+///
+/// This is a Wrapper around a pointer to the htslib sam_hdr_t (`SamHdrRaw`).
+/// There are many methods provided by htslib for interacting with the
+/// header structure, both reading and writing. There are, however, several
+/// common methods which are logically read only, but in fact require a a mutable
+/// pointer. This is because the header maintains hashes to enable fast access to
+/// information such as sequence names etc., and these are updated when necessary
+/// after modification of the header. Therefore, even to lookup the name of a
+/// sequence can potential require rebuilding the hashes, and therefore a mutable pointer.
+///
+/// To avoid requiring a mutable reference to SamHdr for methos which are logically read only,
+/// we will use interior mutability with a RwLock. For methods that require a shared pointer
+/// we can get this from a read() call, for methods that are modifying the header (adding
+/// lines etc.), we will still require a mutable reference, while for methods that are not
+/// altering the header itself but potentially might rebuild the hashes we first check to see
+/// if a rebuild is necessary (which requires obtaining a read lock). If so, then we drop
+/// the read lock and obtain a write lock, rebuild the hashes and call the method. Otherwise
+/// we continue with the read lock we already have. Note that ifwe have a mutable reference
+/// initially, we can use get_mut() rather than write() as we don't need a lock if we already
+/// have a mutable reference.
+///
+/// In this way the user will need a mutable reference to the header if they want to modify
+/// the basic structure, but only a shared reference if they are just reading from an existing
+/// file (which makes more intuitive sense - at least to me)
+///
 pub struct SamHdr {
-    inner: NonNull<SamHdrRaw>,
-}
-
-impl Deref for SamHdr {
-    type Target = SamHdrRaw;
-
-    fn deref(&self) -> &Self::Target {
-        // We can do this safely as self.inner is always non-null
-        unsafe { self.inner.as_ref() }
-    }
-}
-
-impl DerefMut for SamHdr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // We can do this safely as self.inner is always non-null
-        unsafe { self.inner.as_mut() }
-    }
+    // We use interior mutability to lookup sequence names -> id
+    // maps as we require a mutable reference for this in the
+    // case that the required cache has not been filled, but
+    // generally a shared reference is sufficient
+    //
+    // The pointer to SamHdrRaw will always be valid
+    inner: RwLock<*mut SamHdrRaw>,
 }
 
 impl Clone for SamHdr {
@@ -518,7 +386,11 @@ unsafe impl Sync for SamHdr {}
 
 impl Drop for SamHdr {
     fn drop(&mut self) {
-        unsafe { sam_hdr_destroy(self.deref_mut()) };
+        let hdr = match self.inner.get_mut() {
+            Ok(p) => *p,
+            Err(e) => *e.into_inner(),
+        };
+        unsafe { sam_hdr_destroy(hdr) };
     }
 }
 
@@ -536,7 +408,8 @@ impl SamHdr {
     }
 
     pub fn try_dup(&self) -> Result<Self, SamError> {
-        Self::make_sam_hdr(unsafe { sam_hdr_dup(self.deref()) }, SamError::OutOfMemory)
+        let hd = self.inner.read().unwrap();
+        Self::make_sam_hdr(unsafe { sam_hdr_dup(*hd.deref()) }, SamError::OutOfMemory)
     }
 
     pub fn parse(text: &CStr) -> Result<Self, SamError> {
@@ -554,19 +427,300 @@ impl SamHdr {
     }
 
     fn make_sam_hdr(hdr: *mut SamHdrRaw, e: SamError) -> Result<Self, SamError> {
-        match NonNull::new(hdr) {
-            None => Err(e),
-            Some(hdr) => Ok(Self {
-                inner: hdr,
-            }),
+        if hdr.is_null() {
+            Err(e)
+        } else {
+            Ok(Self {
+                inner: RwLock::new(hdr),
+            })
         }
+    }
+
+    /// Get a shared reference from inner. We return a read guard along with the
+    /// reference so that the guard remains in scope and the reference stays valid
+    #[inline]
+    fn get_ref(&self) -> (RwLockReadGuard<*mut SamHdrRaw>, &SamHdrRaw) {
+        let g = self.inner.read().unwrap();
+        let hdr = unsafe { &*(*g.deref()) };
+        (g, hdr)
+    }
+
+    /// Release a read lock and obtain a write lock, allowing the generation of a
+    /// mutable reference from inner. We return a write guard along with the
+    /// reference so that the guard remains in scope and the reference stays valid
+    #[inline]
+    fn drop_and_get_mut(
+        &self,
+        g: RwLockReadGuard<*mut SamHdrRaw>,
+    ) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
+        drop(g);
+        self.get_mut()
+    }
+
+    /// Get a mutable reference from inner. We return a writeguard along with the
+    /// reference so that the guard remains in scope and the reference stays valid
+    #[inline]
+    fn get_mut(&self) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
+        let g = self.inner.write().unwrap();
+        let hdr = unsafe { &mut *(*g.deref()) };
+        (g, hdr)
+    }
+
+    /// Get a *mut pointer from inner. As we have a mut reference for self,
+    /// we can directly obtain a mut pointer without requiring a lock as
+    /// exclusive access is statically enforced
+    #[inline]
+    fn as_mut(&mut self) -> &mut SamHdrRaw {
+        unsafe { &mut *(*self.inner.get_mut().unwrap()) }
+    }
+
+    /// Writes the header to `hts_file`
+    #[inline]
+    pub fn write(&self, hts_file: &mut HtsFileRaw) -> Result<(), SamError> {
+        self.get_ref().1.write(hts_file)
+    }
+
+    /// Returns the number of references in sam header
+    #[inline]
+    pub fn nref(&self) -> usize {
+        self.get_ref().1.nref()
+    }
+
+    /// Gets the name of the sequence corresponding to a target index
+    #[inline]
+    pub fn tid2name(&self, i: usize) -> Option<&CStr> {
+        self.get_ref().1.tid2name(i)
+    }
+
+    /// Gets the length of the sequence corresponding to a target index
+    #[inline]
+    pub fn tid2len(&self, i: usize) -> Option<usize> {
+        self.get_ref().1.tid2len(i)
+    }
+
+    /// Get internal ID corresponding to a sequence name
+    #[inline]
+    pub fn name2tid(&self, cname: &CStr) -> Result<usize, SamError> {
+        let (g, hdr) = self.get_ref();
+        if hdr.hrecs.is_null() {
+            self.drop_and_get_mut(g).1.name2tid_rebuild(cname)
+        } else {
+            hdr.name2tid(cname)
+        }
+    }
+
+    /// Returns the current header txt.
+    #[inline]
+    pub fn text(&self) -> Option<&CStr> {
+        // The htslib function *always* rebuilds the header so we will
+        // unconditionally obtain a mutable pointer
+        self.get_mut().1.text()
+    }
+
+    /// Returns length of header text
+    #[inline]
+    pub fn length(&self) -> Result<usize, SamError> {
+        // The htslib function *always* rebuilds the header so we will
+        // unconditionally obtain a mutable pointer
+        self.get_mut().1.length()
+    }
+
+    /// Add SAM header record(s) with optional new line.  If multiple lines are present (separated by newlines)
+    /// then they will be added in order
+    #[inline]
+    pub fn add_lines(&mut self, lines: &CStr) -> Result<(), SamError> {
+        match unsafe { sam_hdr_add_lines(self.as_mut(), lines.as_ptr(), cstr_len(lines) as size_t) }
+        {
+            0 => Ok(()),
+            _ => Err(SamError::FailedAddHeaderLine),
+        }
+    }
+
+    pub fn add_line(&mut self, line: &SamHdrLine) -> Result<(), SamError> {
+        let nl = format!("{line}");
+        let cs = CString::new(nl.as_str()).map_err(|_| SamError::IllegalHeaderChars)?;
+        self.add_lines(&cs)
+    }
+
+    pub fn remove_except(
+        &mut self,
+        ln_type: &SamHdrType,
+        id: Option<SamHdrTagValue>,
+    ) -> Result<(), SamError> {
+        match if let Some(tv) = id {
+            unsafe {
+                sam_hdr_remove_except(
+                    self.as_mut(),
+                    ln_type.to_cstr().as_ptr(),
+                    tv.tag().as_ptr() as *const c_char,
+                    tv.value().as_ptr() as *const c_char,
+                )
+            }
+        } else {
+            unsafe {
+                sam_hdr_remove_except(
+                    self.as_mut(),
+                    ln_type.to_cstr().as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                )
+            }
+        } {
+            0 => Ok(()),
+            _ => Err(SamError::FailedRemoveHeaderLines),
+        }
+    }
+
+    pub fn remove(&mut self, ln_type: &SamHdrType) -> Result<(), SamError> {
+        self.remove_except(ln_type, None)
+    }
+
+    pub fn change_hd(&mut self, key: &CStr, val: Option<&CStr>) {
+        let val = if let Some(v) = val {
+            v.as_ptr()
+        } else {
+            ptr::null::<c_char>()
+        };
+        unsafe { sam_hdr_change_HD(self.as_mut(), key.as_ptr(), val) }
+    }
+
+    pub fn find_line_id(&self, typ: &CStr, id_key: &CStr, id_val: &CStr) -> Option<KString> {
+        let mut ks = KString::new();
+        if unsafe {
+            sam_hdr_find_line_id(
+                self.get_mut().1,
+                typ.as_ptr(),
+                id_key.as_ptr(),
+                id_val.as_ptr(),
+                &mut ks,
+            ) == 0
+        } {
+            Some(ks)
+        } else {
+            None
+        }
+    }
+
+    pub fn find_line_pos(&self, typ: &CStr, pos: usize) -> Option<KString> {
+        let mut ks = KString::new();
+        if unsafe {
+            sam_hdr_find_line_pos(self.get_mut().1, typ.as_ptr(), pos as c_int, &mut ks) == 0
+        } {
+            Some(ks)
+        } else {
+            None
+        }
+    }
+
+    pub fn remove_line_pos(&mut self, typ: &CStr, pos: usize) -> Result<(), SamError> {
+        if unsafe { sam_hdr_remove_line_pos(self.as_mut(), typ.as_ptr(), pos as c_int) == 0 } {
+            Ok(())
+        } else {
+            Err(SamError::OperationFailed)
+        }
+    }
+
+    pub fn remove_line_id(
+        &mut self,
+        typ: &CStr,
+        id_key: &CStr,
+        id_val: &CStr,
+    ) -> Result<(), SamError> {
+        if unsafe {
+            sam_hdr_remove_line_id(
+                self.as_mut(),
+                typ.as_ptr(),
+                id_key.as_ptr(),
+                id_val.as_ptr(),
+            ) == 0
+        } {
+            Ok(())
+        } else {
+            Err(SamError::OperationFailed)
+        }
+    }
+
+    pub fn find_tag_id(
+        &self,
+        typ: &CStr,
+        id_key: &CStr,
+        id_val: &CStr,
+        key: &CStr,
+    ) -> Option<KString> {
+        let mut ks = KString::new();
+        if unsafe {
+            sam_hdr_find_tag_id(
+                self.get_mut().1,
+                typ.as_ptr(),
+                id_key.as_ptr(),
+                id_val.as_ptr(),
+                key.as_ptr(),
+                &mut ks,
+            ) == 0
+        } {
+            Some(ks)
+        } else {
+            None
+        }
+    }
+
+    pub fn find_tag_pos(&self, typ: &CStr, pos: usize, key: &CStr) -> Option<KString> {
+        let mut ks = KString::new();
+        if unsafe {
+            sam_hdr_find_tag_pos(
+                self.get_mut().1,
+                typ.as_ptr(),
+                pos as c_int,
+                key.as_ptr(),
+                &mut ks,
+            ) == 0
+        } {
+            Some(ks)
+        } else {
+            None
+        }
+    }
+
+    pub fn count_lines(&self, typ: &CStr) -> Option<usize> {
+        let n = unsafe { sam_hdr_count_lines(self.get_mut().1, typ.as_ptr()) };
+        if n >= 0 { Some(n as usize) } else { None }
+    }
+}
+
+impl SeqId for SamHdr {
+    #[inline]
+    fn seq_id(&self, s: &CStr) -> Option<usize> {
+        self.name2tid(s).ok()
+    }
+}
+
+impl IdMap for SamHdr {
+    #[inline]
+    fn seq_name(&self, i: usize) -> Option<&CStr> {
+        self.tid2name(i)
+    }
+
+    #[inline]
+    fn seq_len(&self, i: usize) -> Option<usize> {
+        self.tid2len(i)
+    }
+
+    #[inline]
+    fn num_seqs(&self) -> usize {
+        self.nref()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{HtsError, hts::HtsFile};
+    use crate::{
+        HtsError,
+        hts::{
+            HtsFile,
+            traits::{SeqId, IdMap},
+        },
+    };
 
     #[test]
     fn construct() -> Result<(), SamError> {
@@ -595,9 +749,15 @@ mod tests {
     fn read_hdr() -> Result<(), HtsError> {
         let mut samfile = HtsFile::open(c"test/realn01.sam", c"r")?;
         let hdr = SamHdr::read(&mut samfile)?;
-        assert_eq!(hdr.tid2name(0), Some(c"000000F"));
+        let ctg0 = c"000000F";
+        
+        assert_eq!(hdr.tid2name(0), Some(ctg0));
         assert_eq!(hdr.tid2name(1), None);
         assert_eq!(hdr.tid2len(0), Some(686));
+        assert_eq!(hdr.seq_id(ctg0), Some(0));
+        assert_eq!(hdr.num_seqs(), 1);
+        assert_eq!(hdr.seq_name(0), Some(ctg0));
+        assert_eq!(hdr.seq_len(0), Some(686));
         Ok(())
     }
 }

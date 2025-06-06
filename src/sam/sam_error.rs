@@ -16,6 +16,8 @@ pub enum SamError {
     FailedRemoveHeaderLines,
     #[error("Out of memory")]
     OutOfMemory,
+    #[error("Header text not parsed")]
+    HeaderNotParsed,
     #[error("Failed to parse header text")]
     HeaderParseFailed,
     #[error("Operation failed")]

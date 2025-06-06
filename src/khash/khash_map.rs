@@ -141,12 +141,11 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
     }
 }
 
-pub struct KHashMap<'a, K, V> {
+pub struct KHashMap<K, V> {
     inner: *mut KHashMapRaw<K, V>,
-    phantom: PhantomData<&'a mut KHashMapRaw<K, V>>,
 }
 
-impl<K, V> Deref for KHashMap<'_, K, V> {
+impl<K, V> Deref for KHashMap<K, V> {
     type Target = KHashMapRaw<K, V>;
 
     fn deref(&self) -> &Self::Target {
@@ -155,14 +154,14 @@ impl<K, V> Deref for KHashMap<'_, K, V> {
     }
 }
 
-impl<K, V> DerefMut for KHashMap<'_, K, V> {
+impl<K, V> DerefMut for KHashMap<K, V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl<K, V> Drop for KHashMap<'_, K, V> {
+impl<K, V> Drop for KHashMap<K, V> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // Drop inner
@@ -174,7 +173,7 @@ impl<K, V> Drop for KHashMap<'_, K, V> {
     }
 }
 
-impl<K, V> Default for KHashMap<'_, K, V> {
+impl<K, V> Default for KHashMap<K, V> {
     fn default() -> Self {
         let inner = unsafe {
             libc::calloc(1, mem::size_of::<KHashMapRaw<K, V>>()) as *mut KHashMapRaw<K, V>
@@ -182,12 +181,11 @@ impl<K, V> Default for KHashMap<'_, K, V> {
         assert!(!inner.is_null(), "Out of memory error");
         Self {
             inner,
-            phantom: PhantomData,
         }
     }
 }
 
-impl<K: KHashFunc + PartialEq, V> KHashMap<'_, K, V> {
+impl<K: KHashFunc + PartialEq, V> KHashMap<K, V> {
     pub fn with_capacity(sz: KHInt) -> Self {
         let mut h = Self::default();
         h.expand(sz);
@@ -197,7 +195,7 @@ impl<K: KHashFunc + PartialEq, V> KHashMap<'_, K, V> {
     }
 }
 
-impl<'a, K, V> KHashMap<'a, K, V> {
+impl<'a, K, V> KHashMap<K, V> {
     #[inline]
     pub fn new() -> Self {
         Self::default()
@@ -232,7 +230,6 @@ impl<'a, K, V> KHashMap<'a, K, V> {
         );
         Self {
             inner,
-            phantom: PhantomData,
         }
     }
 
@@ -258,7 +255,7 @@ impl<'a, K, V> KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> IntoIterator for &KHashMap<'a, K, V> {
+impl<'a, K, V> IntoIterator for &'a KHashMap<K, V> {
     type Item = (&'a K, &'a V);
     type IntoIter = KIterMap<'a, K, V>;
 
@@ -271,7 +268,7 @@ impl<'a, K, V> IntoIterator for &KHashMap<'a, K, V> {
     }
 }
 
-impl<'a, K, V> IntoIterator for &mut KHashMap<'a, K, V> {
+impl<'a, K, V> IntoIterator for &'a mut KHashMap<K, V> {
     type Item = (&'a K, &'a mut V);
     type IntoIter = KIterMapMut<'a, K, V>;
 
@@ -284,7 +281,7 @@ impl<'a, K, V> IntoIterator for &mut KHashMap<'a, K, V> {
     }
 }
 
-impl<K, V> IntoIterator for KHashMap<'_, K, V> {
+impl<K, V> IntoIterator for KHashMap<K, V> {
     type Item = (K, V);
     type IntoIter = KIntoIter<K, V>;
 

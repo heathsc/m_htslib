@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
     ptr,
@@ -86,12 +85,11 @@ impl<K: KHashFunc + PartialEq> KHashSetRaw<K> {
     }
 }
 
-pub struct KHashSet<'a, K> {
+pub struct KHashSet<K> {
     inner: *mut KHashSetRaw<K>,
-    phantom: PhantomData<&'a mut KHashSetRaw<K>>,
 }
 
-impl<K> Deref for KHashSet<'_, K> {
+impl<K> Deref for KHashSet<K> {
     type Target = KHashSetRaw<K>;
 
     fn deref(&self) -> &Self::Target {
@@ -100,14 +98,14 @@ impl<K> Deref for KHashSet<'_, K> {
     }
 }
 
-impl<K> DerefMut for KHashSet<'_, K> {
+impl<K> DerefMut for KHashSet<K> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { &mut *self.inner }
     }
 }
 
-impl<K> Drop for KHashSet<'_, K> {
+impl<K> Drop for KHashSet<K> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // Drop inner
@@ -119,18 +117,17 @@ impl<K> Drop for KHashSet<'_, K> {
     }
 }
 
-impl<K> Default for KHashSet<'_, K> {
+impl<K> Default for KHashSet<K> {
     fn default() -> Self {
         let inner =
             unsafe { libc::calloc(1, mem::size_of::<KHashSetRaw<K>>()) as *mut KHashSetRaw<K> };
         assert!(!inner.is_null(), "Out of memory error");
         Self {
             inner,
-            phantom: PhantomData,
         }
     }
 }
-impl<'a, K> KHashSet<'a, K> {
+impl<'a, K> KHashSet<K> {
     #[inline]
     pub fn new() -> Self {
         Self::default()
@@ -164,7 +161,6 @@ impl<'a, K> KHashSet<'a, K> {
         );
         Self {
             inner,
-            phantom: PhantomData,
         }
     }
     #[inline]
@@ -174,7 +170,7 @@ impl<'a, K> KHashSet<'a, K> {
         map.into_keys()
     }
 }
-impl<K: KHashFunc + PartialEq> KHashSet<'_, K> {
+impl<K: KHashFunc + PartialEq> KHashSet<K> {
     pub fn with_capacity(sz: KHInt) -> Self {
         let mut h = Self::default();
         h.expand(sz);
@@ -182,7 +178,7 @@ impl<K: KHashFunc + PartialEq> KHashSet<'_, K> {
     }
 }
 
-impl<'a, K> IntoIterator for &KHashSet<'a, K> {
+impl<'a, K> IntoIterator for &'a KHashSet<K> {
     type Item = &'a K;
     type IntoIter = KIter<'a, K>;
 
@@ -191,7 +187,7 @@ impl<'a, K> IntoIterator for &KHashSet<'a, K> {
     }
 }
 
-impl<K> IntoIterator for KHashSet<'_, K> {
+impl<K> IntoIterator for KHashSet<K> {
     type Item = K;
     type IntoIter = KIntoKeys<K>;
 
