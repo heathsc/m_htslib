@@ -286,8 +286,8 @@ fn bytes_to_htspos(s: &[u8], mut tid: i32) -> Result<(HtsPos, i32), ParseINumErr
 
 #[inline]
 fn bytes_to_uint(s: &[u8], max: u64) -> Result<u64, ParseINumError> {
-    crate::int_utils::parse_u64(s, max).and_then(|(x, t)| {
-        if t.is_empty() {
+    crate::int_utils::parse_uint::<u64>(s, max).and_then(|(x, t)| {
+        if t == s.len() {
             Ok(x)
         } else {
             Err(ParseINumError::TrailingGarbage)
@@ -313,8 +313,23 @@ impl SamParser {
     }
 }
 
+fn reg2bin(begin: HtsPos, end: HtsPos, min_shift: c_int, n_lvls: c_int) -> c_int {
+    assert!(end > begin);
+    let mut s = min_shift;
+    let mut t = ((1 << ((n_lvls << 1) + n_lvls)) - 1) / 7;
+    let end = end - 1;
+    for l in (1..=n_lvls).rev() {
+        if begin >> s == end >> s {
+            return t + (begin >> s) as c_int;
+        }
+        s += 3;
+        t -= 1 << ((l << 1) + l);
+    }
+    0
+}
+
 #[cfg(test)]
-mod test {
+mod tests {
     #[allow(unused)]
     use super::*;
 
@@ -345,17 +360,3 @@ mod test {
     }
 }
 
-fn reg2bin(begin: HtsPos, end: HtsPos, min_shift: c_int, n_lvls: c_int) -> c_int {
-    assert!(end > begin);
-    let mut s = min_shift;
-    let mut t = ((1 << ((n_lvls << 1) + n_lvls)) - 1) / 7;
-    let end = end - 1;
-    for l in (1..=n_lvls).rev() {
-        if begin >> s == end >> s {
-            return t + (begin >> s) as c_int;
-        }
-        s += 3;
-        t -= 1 << ((l << 1) + l);
-    }
-    0
-}

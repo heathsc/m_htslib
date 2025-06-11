@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 use thiserror::Error;
 
 use crate::{AuxError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, SamError};
@@ -53,5 +55,9 @@ pub enum HtsError {
     #[error("KString Error: {0}")]
     KStringError(#[from] KStringError),
     #[error("Faidx Error: {0}")]
-    FaidxError(#[from] FaidxError),
+    FaidxError(#[from] FaidxError),   
+    #[error("Parse Int Error: {0}")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("Illegal Tid: {0}")]
+    TidError(libc::c_int),
 }

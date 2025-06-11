@@ -304,7 +304,8 @@ where
 const MAX_OP_LEN: u32 = (1 << 28) - 1;
 
 fn parse_op_len(s: &[u8]) -> Result<(u32, &[u8]), ParseINumError> {
-    crate::int_utils::parse_u32(s, MAX_OP_LEN)
+    crate::int_utils::parse_uint::<u32>(s, MAX_OP_LEN)
+            .map(|(x, i)| (x, &s[i..]))
 }
 
 #[cfg(test)]

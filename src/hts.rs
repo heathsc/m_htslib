@@ -1,5 +1,5 @@
-use libc::{c_char, c_int, c_uint, c_void};
-use std::ffi::CStr;
+use libc::{c_char, c_int, c_uint};
+use std::{ffi::CStr, str::FromStr};
 
 pub mod hfile;
 pub mod hts_error;
@@ -25,6 +25,24 @@ use hts_ocstr::OCStr;
 use crate::LIBHTS;
 
 pub type HtsPos = i64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HtsTid(c_int);
+
+impl HtsTid {
+    pub fn new(i: c_int) -> Result<Self, HtsError> {
+        if i >= HTS_IDX_NONE {
+            Ok(Self(i))
+        } else {
+            Err(HtsError::TidError(i))
+        }
+    }
+    
+    #[inline]
+    pub fn get(&self) -> c_int {
+        self.0
+    }
+}
 
 #[repr(C)]
 pub enum HtsLogLevel {
@@ -153,6 +171,14 @@ pub enum Whence {
 
 pub const HTS_IDX_DELIM: &str = "##idx##";
 
-/// Not sure if I will use this, but if I do it won't be exposed to the public API
-#[allow(dead_code)]
-pub(crate) type HtsName2Id = unsafe extern "C" fn(hdr: *mut c_void, str: *const c_char) -> c_int;
+/// These HTS_IDX_* const are used as special tid values for hts iterators,
+/// producing iterators operating as follows:
+/// - HTS_IDX_NOCOOR iterates over unmapped reads sorted at the end of the file
+/// - HTS_IDX_START  iterates over the entire file
+/// - HTS_IDX_REST   iterates from the current position to the end of the file
+/// - HTS_IDX_NONE   always returns "no more alignment records"
+/// 
+pub const HTS_IDX_NOCOOR: c_int = -2;
+pub const HTS_IDX_START: c_int = -3;
+pub const HTS_IDX_REST: c_int = -4;
+pub const HTS_IDX_NONE: c_int = -5;

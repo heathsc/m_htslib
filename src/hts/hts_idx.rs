@@ -1,4 +1,4 @@
-use libc::{c_char, c_int, c_void};
+use libc::{c_char, c_int};
 use std::{
     ffi::CStr,
     ops::{Deref, DerefMut},
@@ -7,7 +7,7 @@ use std::{
 
 use super::{
     hts_error::HtsError,
-    {HtsName2Id, HtsPos},
+    HtsPos,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -93,15 +93,6 @@ unsafe extern "C" {
         unmapped: *mut u64,
     ) -> c_int;
     fn hts_idx_get_n_no_coor(idx: *const HtsIdxRaw) -> u64;
-
-    /// Not sure if I will be using this or not yet
-    #[allow(dead_code)]
-    fn hts_idx_seqnames(
-        idx: *const HtsIdxRaw,
-        n: c_int,
-        get_id: HtsName2Id,
-        hdr: *mut c_void,
-    ) -> *mut *const c_char;
     fn hts_idx_nseq(idx: *const HtsIdxRaw) -> c_int;
 }
 

@@ -14,6 +14,7 @@ pub(crate) mod int_utils;
 pub mod khash;
 pub mod kstring;
 pub mod le_bytes;
+pub mod region;
 pub mod sam;
 
 pub use error::*;
