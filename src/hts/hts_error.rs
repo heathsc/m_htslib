@@ -2,7 +2,7 @@ use std::num::ParseIntError;
 
 use thiserror::Error;
 
-use crate::{AuxError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, SamError};
+use crate::{AuxError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, ParseINumError, SamError};
 
 #[derive(Error, Debug)]
 pub enum HtsError {
@@ -40,6 +40,12 @@ pub enum HtsError {
     OutOfMemory,
     #[error("No stats information available")]
     StatsUnavailable,
+    #[error("No valid contig found")]
+    InvalidContig,
+    #[error("Trailing garbage when parsing region")]
+    TrailingGarbage,
+    #[error("Invalid region specified")]
+    InvalidRegion,
     #[error("Aux Error: {0}")]
     AuxError(#[from] AuxError),
     #[error("Sam Error: {0}")]
@@ -58,6 +64,8 @@ pub enum HtsError {
     FaidxError(#[from] FaidxError),   
     #[error("Parse Int Error: {0}")]
     ParseIntError(#[from] ParseIntError),
+    #[error("Parse INum Error: {0}")]
+    ParseInumError(#[from] ParseINumError),
     #[error("Illegal Tid: {0}")]
     TidError(libc::c_int),
 }

@@ -1,6 +1,5 @@
 use std::{
     cmp::Ordering,
-    num::ParseIntError,
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
@@ -233,7 +232,7 @@ fn get_num(
 }
 
 #[inline]
-fn skip_space(s: &[u8]) -> &[u8] {
+pub(crate) fn skip_space(s: &[u8]) -> &[u8] {
     s.iter()
         .position(|c| !c.is_ascii_whitespace())
         .map(|i| &s[i..])
