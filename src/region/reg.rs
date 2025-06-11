@@ -11,6 +11,8 @@ use crate::{
     int_utils::{parse_decimal, skip_space},
 };
 
+use super::traits::*;
+
 /// Matches when the contig is disambiguated using brackets i.e.., {chr2}
 /// The Regex for the contig name comes from the VCF4.3 spec
 static RE_CONTIG1: LazyLock<Regex> = LazyLock::new(|| {
@@ -29,17 +31,16 @@ static RE_CONTIG2: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 #[derive(Debug)]
-pub struct RegContig {
-    inner: CString,
+pub struct RegContig<'a> {
+    inner: &'a [u8],
 }
 
-impl RegContig {
-    pub fn from_region(s: &[u8]) -> Result<(Self, &[u8], bool), HtsError> {
+impl <'a> RegContig<'a> {
+    pub fn from_region(s: &'a[u8]) -> Result<(Self, &'a[u8], bool), HtsError> {
         if let Some(cap) = RE_CONTIG1.captures(s).or_else(|| RE_CONTIG2.captures(s)) {
             if let (Some(c), Some(r)) = (cap.get(1), cap.get(3)) {
                 let ctg = Self {
-                    inner: CString::new(c.as_bytes())
-                        .expect("Internal error - null bytes in contig name"),
+                    inner:c.as_bytes(),
                 };
                 Ok((ctg, r.as_bytes(), cap.get(2).is_some()))
             } else {
@@ -51,14 +52,16 @@ impl RegContig {
     }
 
     #[inline]
-    pub fn contig(&self) -> &CStr {
-        self.inner.as_c_str()
+    pub fn name(&self) -> &str {
+        // This is safe because every contig name has to match [RE_CONTIG1] or [RE_CONTIG2], 
+        // so we know that they must only contain valid 7 bit ascii which is also valid utf8
+        unsafe { str::from_utf8_unchecked(self.inner) }
     }
 }
 
-impl fmt::Display for RegContig {
+impl <'a> fmt::Display for RegContig<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.inner.to_string_lossy();
+        let s = self.name();
 
         if f.alternate() && s.contains(':') {
             write!(f, "{{{}}}", s)
@@ -69,13 +72,13 @@ impl fmt::Display for RegContig {
 }
 
 #[derive(Debug)]
-pub enum Reg {
-    Chrom(RegContig),
-    Open(RegContig, usize),
-    Closed(RegContig, usize, usize),
+pub enum Reg<'a> {
+    Chrom(RegContig<'a>),
+    Open(RegContig<'a>, usize),
+    Closed(RegContig<'a>, usize, usize),
 }
 
-impl fmt::Display for Reg {
+impl fmt::Display for Reg<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Reg::Chrom(a) => write!(f, "{a}"),
@@ -86,8 +89,8 @@ impl fmt::Display for Reg {
     }
 }
 
-impl Reg {
-    pub fn from_region(s: &[u8]) -> Result<Self, HtsError> {
+impl <'a> Reg<'a> {
+    pub fn from_region(s: &'a [u8]) -> Result<Self, HtsError> {
         let (ctg, s, colon) = RegContig::from_region(s)?;
         match (colon, s) {
             (_, &[]) => Ok(Self::Chrom(ctg)),
@@ -96,7 +99,7 @@ impl Reg {
         }
     }
 
-    fn parse_range(s: &[u8], ctg: RegContig) -> Result<Self, HtsError> {
+    fn parse_range(s: &[u8], ctg: RegContig<'a>) -> Result<Self, HtsError> {
         let (x, s) = parse_decimal(s)?;
         let s = skip_space(s);
         match (x, s) {
@@ -110,11 +113,13 @@ impl Reg {
             (_, _) => Err(HtsError::TrailingGarbage),
         }
     }
+}
 
+impl RegCtgName for Reg<'_> {
     #[inline]
-    pub fn contig(&self) -> &CStr {
+    fn contig_name(&self) -> &str {
         match self {
-            Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.contig(),
+            Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.name(),
         }
     }
 }
@@ -128,7 +133,7 @@ mod tests {
     #[test]
     fn test_parse_reg_contig() {
         let (ctg, s, colon) = RegContig::from_region(b"chr5:1.2M-1.43M").unwrap();
-        assert_eq!(ctg.to_string(), "chr5");
+        assert_eq!(ctg.name(), "chr5");
         assert_eq!(s, b"1.2M-1.43M");
         assert!(colon);
 
@@ -137,7 +142,7 @@ mod tests {
         assert!(!colon);
 
         let (ctg, s, colon) = RegContig::from_region(b"{chr5:1}:1.2M-1.43M").unwrap();
-        assert_eq!(ctg.to_string(), "chr5:1");
+        assert_eq!(ctg.name(), "chr5:1");
         assert_eq!(s, b"1.2M-1.43M");
         assert!(colon);
     }
@@ -146,12 +151,12 @@ mod tests {
     fn test_parse_reg() {
         let reg = Reg::from_region(b"chr5:1.2M-1.43M").unwrap();
         eprintln!("{reg}");
-        assert_eq!(reg.contig(), c"chr5");
+        assert_eq!(reg.contig_name(), "chr5");
         assert!(matches!(reg, Reg::Closed(_, 1199999, 1430000)));
 
         let reg = Reg::from_region(b"chr7.1").unwrap();
         eprintln!("{reg}");
-        assert_eq!(reg.contig(), c"chr7.1");
+        assert_eq!(reg.contig_name(), "chr7.1");
         assert!(matches!(reg, Reg::Chrom(_)));
 
         let reg = Reg::from_region(b"chrX:1.234m").unwrap();
