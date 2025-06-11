@@ -1,5 +1,4 @@
 use std::{
-    ffi::{CStr, CString},
     fmt,
     sync::LazyLock,
 };
@@ -76,6 +75,8 @@ pub enum Reg<'a> {
     Chrom(RegContig<'a>),
     Open(RegContig<'a>, usize),
     Closed(RegContig<'a>, usize, usize),
+    All,
+    UnMapped,
 }
 
 impl fmt::Display for Reg<'_> {
@@ -85,17 +86,25 @@ impl fmt::Display for Reg<'_> {
             Reg::Open(a, x) => write!(f, "{a}:{}-", x + 1),
             Reg::Closed(a, x, y) if *x == 0 => write!(f, "{a}:-{y}"),
             Reg::Closed(a, x, y) => write!(f, "{a}:{}-{y}", x + 1),
+            Reg::UnMapped => write!(f, "*"),
+            Reg::All => write!(f, "."),
         }
     }
 }
 
 impl <'a> Reg<'a> {
     pub fn from_region(s: &'a [u8]) -> Result<Self, HtsError> {
-        let (ctg, s, colon) = RegContig::from_region(s)?;
-        match (colon, s) {
-            (_, &[]) => Ok(Self::Chrom(ctg)),
-            (false, _) => Err(HtsError::TrailingGarbage),
-            (true, s) => Self::parse_range(s, ctg),
+        match s {
+            b"." => Ok(Self::All),
+            b"*" => Ok(Self::UnMapped),
+            _ => {
+                let (ctg, s, colon) = RegContig::from_region(s)?;
+                match (colon, s) {
+                    (_, &[]) => Ok(Self::Chrom(ctg)),
+                    (false, _) => Err(HtsError::TrailingGarbage),
+                    (true, s) => Self::parse_range(s, ctg),
+                }                
+            }
         }
     }
 
@@ -120,6 +129,8 @@ impl RegCtgName for Reg<'_> {
     fn contig_name(&self) -> &str {
         match self {
             Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.name(),
+            Self::All => ".",
+            Self::UnMapped => "*",
         }
     }
 }
@@ -167,6 +178,10 @@ mod tests {
         assert!(matches!(reg, Err(HtsError::InvalidRegion)));
         
         let reg = Reg::from_region(b"chrX:1000,");
-        assert!(matches!(reg, Err(HtsError::TrailingGarbage)));       
+        assert!(matches!(reg, Err(HtsError::TrailingGarbage)));  
+   
+        let reg = Reg::from_region(b"*").unwrap();
+        eprintln!("{reg}");     
+        assert!(matches!(reg, Reg::UnMapped));
     }
 }
