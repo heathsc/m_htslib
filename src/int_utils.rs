@@ -102,11 +102,13 @@ pub(crate) fn parse_i64(s: &[u8]) -> Result<(i64, &[u8]), ParseINumError> {
 ///  - have a leading +/-
 ///  - be written as in E form (i.e., 1.4E6)
 ///  - be followed by K/M/G
-pub(crate) fn parse_decimal(s: &[u8]) -> Result<(i64, &[u8]), ParseINumError> {
+pub(crate) fn parse_decimal(s: &[u8], no_sign: bool) -> Result<(i64, &[u8]), ParseINumError> {
     // Skip leading whitespace
     let s = skip_space(s);
+    
     // Get sign
-    let (negative, i) = get_sign(s);
+    let (negative, i) = if no_sign { (false, 0) } else { get_sign(s) };
+    
     // What we have left to work with...
     let s = &s[i..];
 
@@ -241,7 +243,7 @@ pub(crate) fn skip_space(s: &[u8]) -> &[u8] {
 
 #[inline]
 fn get_sign(s: &[u8]) -> (bool, usize) {
-    s.get(0)
+    s.first()
         .map(|c| match c {
             b'+' => (false, 1),
             b'-' => (true, 1),
@@ -258,18 +260,18 @@ mod tests {
 
     #[test]
     fn test_parse_decimal() {
-        let (i, s) = parse_decimal(b"348695").unwrap();
+        let (i, s) = parse_decimal(b"348695", false).unwrap();
         assert_eq!(i, 348695);
-        let (i, s) = parse_decimal(b"2,348,695").unwrap();
+        let (i, s) = parse_decimal(b"2,348,695", false).unwrap();
         assert_eq!(i, 2348695);
         assert_eq!(s, &[]);
-        let (i, _) = parse_decimal(b"1.4M").unwrap();
+        let (i, _) = parse_decimal(b"1.4M", false).unwrap();
         assert_eq!(i, 1400000);
-        let (i, _s) = parse_decimal(b"1.4212e3").unwrap();
+        let (i, _s) = parse_decimal(b"1.4212e3", false).unwrap();
         assert_eq!(i, 1421);
-        let (i, _s) = parse_decimal(b"1.42E2K").unwrap();
-        assert_eq!(i, 142000);
-        let (i, s) = parse_decimal(b"7.2E-2M,432").unwrap();
+        let (i, _s) = parse_decimal(b"-1.42E2K", false).unwrap();
+        assert_eq!(i, -142000);
+        let (i, s) = parse_decimal(b"7.2E-2M,432", false).unwrap();
         assert_eq!(i, 72000);
         assert_eq!(s, b",432");
     }

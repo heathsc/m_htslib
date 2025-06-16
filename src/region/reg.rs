@@ -1,5 +1,6 @@
 use std::{
     fmt,
+    num::NonZero,
     sync::LazyLock,
 };
 
@@ -51,16 +52,21 @@ impl <'a> RegContig<'a> {
     }
 
     #[inline]
-    pub fn name(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         // This is safe because every contig name has to match [RE_CONTIG1] or [RE_CONTIG2], 
         // so we know that they must only contain valid 7 bit ascii which is also valid utf8
         unsafe { str::from_utf8_unchecked(self.inner) }
+    }
+    
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner
     }
 }
 
 impl <'a> fmt::Display for RegContig<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.name();
+        let s = self.as_str();
 
         if f.alternate() && s.contains(':') {
             write!(f, "{{{}}}", s)
@@ -74,7 +80,7 @@ impl <'a> fmt::Display for RegContig<'a> {
 pub enum Reg<'a> {
     Chrom(RegContig<'a>),
     Open(RegContig<'a>, usize),
-    Closed(RegContig<'a>, usize, usize),
+    Closed(RegContig<'a>, usize, NonZero<usize>),
     All,
     UnMapped,
 }
@@ -109,14 +115,18 @@ impl <'a> Reg<'a> {
     }
 
     fn parse_range(s: &[u8], ctg: RegContig<'a>) -> Result<Self, HtsError> {
-        let (x, s) = parse_decimal(s)?;
+        
+        let mk_nz = |i: i64| unsafe { NonZero::new_unchecked(i as usize)};
+        
+        let (x, s) = parse_decimal(s, false)?;
         let s = skip_space(s);
         match (x, s) {
-            (x, &[]) if x < 0 => Ok(Self::Closed(ctg, 0, -x as usize)),
+            // Note that we can use NonZero::new_unchecked as we have just verifed that x < 0 so -x > 0
+            (x, &[]) if x < 0 => Ok(Self::Closed(ctg, 0, mk_nz(-x))),
             (x, &[]) | (x, b"-") => Ok(Self::Open(ctg, (x - 1).max(0) as usize)),
-            (x, s) if s[0] == b'-' => match parse_decimal(&s[1..])? {
-                (y, &[]) if y < x => Err(HtsError::InvalidRegion),
-                (y, &[]) => Ok(Self::Closed(ctg, (x - 1).max(0) as usize, y as usize)),
+            (x, s) if s[0] == b'-' => match parse_decimal(&s[1..], false)? {
+                (y, &[]) if y <= x => Err(HtsError::InvalidRegion),
+                (y, &[]) => Ok(Self::Closed(ctg, (x - 1).max(0) as usize, mk_nz(y))),
                 (_, _) => Err(HtsError::TrailingGarbage),
             },
             (_, _) => Err(HtsError::TrailingGarbage),
@@ -128,7 +138,7 @@ impl RegCtgName for Reg<'_> {
     #[inline]
     fn contig_name(&self) -> &str {
         match self {
-            Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.name(),
+            Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.as_str(),
             Self::All => ".",
             Self::UnMapped => "*",
         }
@@ -140,11 +150,12 @@ mod tests {
     #![allow(unused)]
 
     use super::*;
-
+    use std::num::NonZero;
+    
     #[test]
     fn test_parse_reg_contig() {
         let (ctg, s, colon) = RegContig::from_region(b"chr5:1.2M-1.43M").unwrap();
-        assert_eq!(ctg.name(), "chr5");
+        assert_eq!(ctg.as_str(), "chr5");
         assert_eq!(s, b"1.2M-1.43M");
         assert!(colon);
 
@@ -153,7 +164,7 @@ mod tests {
         assert!(!colon);
 
         let (ctg, s, colon) = RegContig::from_region(b"{chr5:1}:1.2M-1.43M").unwrap();
-        assert_eq!(ctg.name(), "chr5:1");
+        assert_eq!(ctg.as_str(), "chr5:1");
         assert_eq!(s, b"1.2M-1.43M");
         assert!(colon);
     }
@@ -163,7 +174,8 @@ mod tests {
         let reg = Reg::from_region(b"chr5:1.2M-1.43M").unwrap();
         eprintln!("{reg}");
         assert_eq!(reg.contig_name(), "chr5");
-        assert!(matches!(reg, Reg::Closed(_, 1199999, 1430000)));
+        let y: NonZero<usize> = NonZero::new(1430000).unwrap();
+        assert!(matches!(reg, Reg::Closed(_, 1199999, y)));
 
         let reg = Reg::from_region(b"chr7.1").unwrap();
         eprintln!("{reg}");

@@ -1,9 +1,7 @@
 use std::ffi::CStr;
 
 use crate::{
-    SamError,
-    hts::HtsPos,
-    sam::{BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter},
+    hts::HtsPos, sam::{bam1::bam1_t, BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter}, SamError
 };
 
 use libc::c_int;
@@ -140,6 +138,13 @@ impl BamRec {
         SeqQualIter::new(self.seq_slice(), self.qual_slice())
     }
     
+    pub(super) fn as_ptr(&self) -> *const bam1_t {
+        &self.inner as *const bam1_t
+    }
+    
+    pub(in crate::sam::record) fn as_mut_ptr(&mut self) -> *mut bam1_t {
+        &mut self.inner as *mut bam1_t
+    }
 }
 
 #[inline]

@@ -1,10 +1,11 @@
 use libc::{c_char, c_int, c_uint};
-use std::{ffi::CStr, str::FromStr};
+use std::ffi::CStr;
 
 pub mod hfile;
 pub mod hts_error;
 pub mod hts_format;
 pub mod hts_idx;
+pub mod hts_itr;
 pub mod hts_ocstr;
 pub mod hts_opt;
 pub mod hts_thread_pool;
@@ -37,7 +38,7 @@ impl HtsTid {
             Err(HtsError::TidError(i))
         }
     }
-    
+
     #[inline]
     pub fn get(&self) -> c_int {
         self.0
@@ -107,7 +108,7 @@ pub fn read_list(s: &CStr, is_file: bool) -> Result<Box<[OCStr]>, HtsError> {
 /// Sets log level for htslib, returning previous log level
 pub fn set_log_level(level: HtsLogLevel) -> HtsLogLevel {
     let _guard = LIBHTS.write();
-    unsafe { 
+    unsafe {
         let old = hts_get_log_level();
         hts_set_log_level(level);
         old
@@ -177,7 +178,7 @@ pub const HTS_IDX_DELIM: &str = "##idx##";
 /// - HTS_IDX_START  iterates over the entire file
 /// - HTS_IDX_REST   iterates from the current position to the end of the file
 /// - HTS_IDX_NONE   always returns "no more alignment records"
-/// 
+///
 pub const HTS_IDX_NOCOOR: c_int = -2;
 pub const HTS_IDX_START: c_int = -3;
 pub const HTS_IDX_REST: c_int = -4;

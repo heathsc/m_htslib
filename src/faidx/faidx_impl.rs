@@ -14,7 +14,7 @@ use crate::{
     from_c,
     hts::{
         HtsPos,
-        traits::{IdMap, SeqId},
+        traits::{IdMap, SeqId, HdrType, HtsHdrType},
     },
     khash::{KHashMap, KHashMapRaw},
 };
@@ -160,6 +160,12 @@ impl Faidx {
             None => Err(FaidxError::ErrorLoadingFaidx),
             Some(idx) => Ok(Faidx { inner: idx }),
         }
+    }
+}
+
+impl HdrType for Faidx {
+    fn hdr_type(&self) -> HtsHdrType {
+        HtsHdrType::Faidx
     }
 }
 

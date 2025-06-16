@@ -435,6 +435,10 @@ impl HtsIdx {
             }),
         }
     }
+    
+    pub fn mk_iterator<H>(&self, hdr: H) {
+        
+    }
 }
 
 #[cfg(test)]

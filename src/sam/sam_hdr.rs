@@ -2,15 +2,21 @@ use libc::{c_char, c_int, c_void, size_t};
 use std::{
     ffi::{CStr, CString},
     fmt::{self, Formatter},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     ptr,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use super::sam_error::SamError;
 use crate::{
     cstr_len, from_c,
-    hts::{htsfile::HtsFileRaw, traits::*},
+    hts::{
+        htsfile::{HtsFile, HtsFileRaw},
+        traits::*,
+    },
     kstring::KString,
 };
 
@@ -29,7 +35,7 @@ pub struct SamHdrRaw {
     text: *mut c_char,
     sdict: *mut c_void,
     hrecs: *mut SamHrecsRaw,
-    ref_counts: u32,
+    ref_count: AtomicU32,
 }
 
 pub struct SamHdrTagValue<'a> {
@@ -390,7 +396,10 @@ impl Drop for SamHdr {
             Ok(p) => *p,
             Err(e) => *e.into_inner(),
         };
-        unsafe { sam_hdr_destroy(hdr) };
+        let h = unsafe { &mut *hdr };
+        if h.ref_count.fetch_sub(1, Ordering::Relaxed) == u32::MAX {
+            unsafe { sam_hdr_destroy(hdr) };
+        }
     }
 }
 
@@ -419,9 +428,9 @@ impl SamHdr {
         )
     }
 
-    pub fn read(hts_file: &mut HtsFileRaw) -> Result<Self, SamError> {
+    pub fn read(hts_file: &mut HtsFile<'_>) -> Result<Self, SamError> {
         Self::make_sam_hdr(
-            unsafe { sam_hdr_read(hts_file as *mut HtsFileRaw) },
+            unsafe { sam_hdr_read(hts_file.deref_mut() as *mut HtsFileRaw) },
             SamError::FailedHeaderRead,
         )
     }
@@ -460,7 +469,7 @@ impl SamHdr {
     /// Get a mutable reference from inner. We return a writeguard along with the
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
-    fn get_mut(&self) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
+    pub (in crate::sam) fn get_mut(&self) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
         let g = self.inner.write().unwrap();
         let hdr = unsafe { &mut *(*g.deref()) };
         (g, hdr)
@@ -687,6 +696,12 @@ impl SamHdr {
     }
 }
 
+impl HdrType for SamHdr {
+    fn hdr_type(&self) -> HtsHdrType {
+        HtsHdrType::Sam
+    }
+}
+
 impl SeqId for SamHdr {
     #[inline]
     fn seq_id(&self, s: &CStr) -> Option<usize> {
@@ -718,7 +733,7 @@ mod tests {
         HtsError,
         hts::{
             HtsFile,
-            traits::{SeqId, IdMap},
+            traits::{IdMap, SeqId},
         },
     };
 
@@ -750,7 +765,7 @@ mod tests {
         let mut samfile = HtsFile::open(c"test/realn01.sam", c"r")?;
         let hdr = SamHdr::read(&mut samfile)?;
         let ctg0 = c"000000F";
-        
+
         assert_eq!(hdr.tid2name(0), Some(ctg0));
         assert_eq!(hdr.tid2name(1), None);
         assert_eq!(hdr.tid2len(0), Some(686));

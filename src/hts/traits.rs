@@ -1,16 +1,29 @@
 use std::{ffi::CStr, iter::FusedIterator};
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum HtsHdrType {
+    Sam, // SAM/BAM/CRAM
+    Vcf, // Unlike SAM/BAM/CRAN, VCF and BCF need to be handled separately
+    Bcf,
+    Tbx, // Tabix indexed files
+    Faidx, // Faidx indexed files
+}
+
+pub trait HdrType {
+    fn hdr_type(&self) -> HtsHdrType;
+}
+
 /// Look up sequence (contig) internal ID in header dictionary (i.e., SAM/BAM/CRAM/VCF/BCF/TBX)
 ///
 /// It is required that internal IDs are contiguous, starting from 0
-pub trait SeqId {
+pub trait SeqId : HdrType {
     /// Convert a sequence name (as a &`CStr`) to am internal id, returning None
     /// if the requested contig is not found.
     fn seq_id(&self, s: &CStr) -> Option<usize>;
 }
 
 /// Addtional conversions between contig names and ids
-pub trait IdMap: Sized {
+pub trait IdMap: Sized + HdrType {
     /// Get sequence name corresponding to an internal id
     fn seq_name(&self, i: usize) -> Option<&CStr>;
 
@@ -60,3 +73,10 @@ where T: IdMap
 
 impl <T: IdMap> ExactSizeIterator for SeqIter<'_, T> {}
 impl <T: IdMap> FusedIterator for SeqIter<'_, T> {}
+
+pub trait ReadRec {
+    type Rec;
+    type Err;
+    
+    fn read_rec<'a>(&mut self, rec: &'a mut Self::Rec) -> Result<Option<&'a Self::Rec>, Self::Err>;
+}

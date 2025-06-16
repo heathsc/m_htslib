@@ -192,7 +192,6 @@ impl DerefMut for HtsFile<'_> {
 }
 
 unsafe impl Send for HtsFile<'_> {}
-unsafe impl Sync for HtsFile<'_> {}
 
 impl Drop for HtsFile<'_> {
     fn drop(&mut self) {

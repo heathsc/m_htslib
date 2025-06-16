@@ -1,6 +1,7 @@
 use std::{num::ParseIntError, str::Utf8Error};
 
 use thiserror::Error;
+use libc::c_int;
 
 use crate::{AuxError, CigarError, CramError, KStringError, ParseINumError};
 
@@ -94,4 +95,6 @@ pub enum SamError {
     IllegalUseOfAuxWriter,
     #[error("Parse number error: {0}")]
     INumError(#[from] ParseINumError),
+    #[error("Error reading from SAM/BAM/CRAM file: {0}")]
+    SamReadError(c_int),
 }
