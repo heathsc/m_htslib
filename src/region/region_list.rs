@@ -2,12 +2,55 @@ use std::num::NonZero;
 use std::{collections::HashMap, ffi::CString};
 
 use super::reg::Reg;
-use crate::hts::HtsPos;
+use crate::{HtsError, hts::HtsPos};
+
+#[derive(Debug, Clone, Copy)]
+pub struct RegionCoords {
+    start: HtsPos,
+    end: Option<NonZero<HtsPos>>,
+}
+
+impl RegionCoords {
+    pub fn new(start: HtsPos, end: Option<HtsPos>) -> Result<Self, HtsError> {
+        match (start, end) {
+            (..0, _) => Err(HtsError::InvalidRegion),
+            (x, Some(y)) if x >= y => Err(HtsError::InvalidRegion),
+            (start, Some(y)) => Ok(Self {
+                start,
+                end: NonZero::new(y),
+            }),
+            (start, None) => Ok(Self { start, end: None }),
+        }
+    }
+
+    /// Convert RegionCoords into a range given by two HtsPos values,
+    /// (x, y) where x is 0-offset, y is 1-offset, and x < y.
+    /// if the end coordinate is missing or if it is greater than tseq_len,
+    /// the end coordinate is replaced by seq_len.
+    /// Returns None if start is beyond the start of the contig.
+    ///
+    /// Note that end (if present) should be > start - if this is not the
+    /// case then this indicates an internal error.
+    pub fn get_range(&self, seq_len: usize) -> Option<(HtsPos, HtsPos)> {
+        let l = seq_len as HtsPos;
+        if self.start >= l {
+            None
+        } else {
+            self.end
+                .map(|y| {
+                    let y = y.get();
+                    // This should not happen
+                    assert!(y > self.start, "Internal error - invalid range");
+                    (self.start, y.min(l))
+                })
+                .or(Some((self.start, l)))
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Region {
-    start: HtsPos,
-    end: Option<NonZero<HtsPos>>,
+    coords: RegionCoords,
     ctg_id: u32,
 }
 
@@ -21,16 +64,19 @@ impl Region {
                 // We know that y is > 0 so this transformation is safe
                 let y = unsafe { NonZero::new_unchecked(y.get() as HtsPos) };
                 (*x as HtsPos, Some(y))
-            },
+            }
         };
-        Self { ctg_id, start, end}
+        Self {
+            ctg_id,
+            coords: RegionCoords { start, end },
+        }
     }
 }
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub enum RegionCtg {
     Contig(CString),
     All,
-    UnMapped,
+    Unmapped,
 }
 
 impl RegionCtg {
@@ -40,7 +86,7 @@ impl RegionCtg {
                 Self::Contig(CString::new(c.as_bytes()).expect("Bad contig name"))
             }
             Reg::All => Self::All,
-            Reg::UnMapped => Self::UnMapped,
+            Reg::UnMapped => Self::Unmapped,
         }
     }
 }
@@ -62,7 +108,7 @@ impl RegionList {
         let region = Region::make(reg, self);
         self.regions.push(region);
     }
-    
+
     fn add_or_lookup_ctg(&mut self, reg: &Reg) -> u32 {
         let ctg = RegionCtg::from_reg(reg);
         *self.ctg_map.entry(ctg).or_insert_with(|| {

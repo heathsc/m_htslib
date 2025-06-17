@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::{ffi::CString, num::ParseIntError};
 
 use thiserror::Error;
 
@@ -68,4 +68,6 @@ pub enum HtsError {
     ParseInumError(#[from] ParseINumError),
     #[error("Illegal Tid: {0}")]
     TidError(libc::c_int),
+    #[error("Unknown contig: {0:?}")]
+    UnknownContig(CString),
 }

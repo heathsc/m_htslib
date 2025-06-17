@@ -8,6 +8,7 @@ pub mod hts_idx;
 pub mod hts_itr;
 pub mod hts_ocstr;
 pub mod hts_opt;
+pub mod hts_region;
 pub mod hts_thread_pool;
 pub mod htsfile;
 pub mod traits;
