@@ -64,5 +64,20 @@ mod tests {
         }
         
         assert_eq!(n, 4);
+    }    #[test]
+    fn test_read_cram() {
+        let mut h =
+            HtsFile::open(c"test/test_input_1_a.cram", c"r").expect("Failed to read test/test_input_1_a.cram");
+        let hdr = SamHdr::read(&mut h).expect("Failed to read header");
+        let mut rec = BamRec::new();
+        let mut reader = SamReader::new(&mut h, &hdr);
+        
+        let mut n = 0;
+        while let Some(r) = reader.read_rec(&mut rec).unwrap() {
+            eprintln!("{:?}", r.qname());
+            n+=1;
+        }
+        
+        assert_eq!(n, 15);
     }
 }
