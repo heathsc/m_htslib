@@ -1,8 +1,13 @@
-use std::num::NonZero;
-use std::{collections::HashMap, ffi::CString};
+use std::{collections::HashMap, ffi::CString, num::NonZero, sync::Arc};
 
 use super::reg::Reg;
-use crate::{HtsError, hts::HtsPos};
+use crate::{
+    HtsError,
+    hts::{
+        HtsPos,
+        hts_region::{HtsRegion, HtslibRegion},
+    },
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct RegionCoords {
@@ -93,9 +98,9 @@ impl RegionCtg {
 
 #[derive(Default)]
 pub struct RegionList {
-    ctg_map: HashMap<RegionCtg, u32>,
+    ctg_map: HashMap<Arc<RegionCtg>, u32>,
     regions: Vec<Region>,
-    n_ctgs: u32,
+    ctgs: Vec<Arc<RegionCtg>>,
 }
 
 impl RegionList {
@@ -110,11 +115,66 @@ impl RegionList {
     }
 
     fn add_or_lookup_ctg(&mut self, reg: &Reg) -> u32 {
-        let ctg = RegionCtg::from_reg(reg);
-        *self.ctg_map.entry(ctg).or_insert_with(|| {
-            let i = self.n_ctgs;
-            self.n_ctgs += 1;
+        let ctg = Arc::new(RegionCtg::from_reg(reg));
+        let key = ctg.clone();
+
+        *self.ctg_map.entry(key).or_insert_with(|| {
+            let i = self.ctgs.len() as u32;
+            self.ctgs.push(ctg);
             i
         })
+    }
+
+    pub fn regions(&self) -> RegionIter {
+        RegionIter::make(self)
+    }
+}
+
+pub struct RegionIter<'a> {
+    inner: &'a RegionList,
+    ix: usize,
+}
+
+impl<'a> RegionIter<'a> {
+    fn make(rl: &'a RegionList) -> Self {
+        Self { inner: rl, ix: 0 }
+    }
+}
+
+impl<'a> Iterator for RegionIter<'a> {
+    type Item = HtsRegion<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.regions.get(self.ix).map(|c| {
+            self.ix += 1;
+            let reg_ctg = self.inner.ctgs[c.ctg_id as usize].as_ref();
+            HtsRegion::new(reg_ctg, &c.coords)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused)]
+
+    use super::*;
+    
+    use crate::region::reg::Reg;
+    
+    #[test]
+    fn test_reg_list() {
+        let mut rl = RegionList::new();
+        let reg = Reg::from_region(b"chr5:1000-2000").unwrap();
+        rl.add_reg(&reg);
+        let reg = Reg::from_region(b"chr5:1.2M-1.43M").unwrap();
+        rl.add_reg(&reg);
+        let reg = Reg::from_region(b"chr7:252654").unwrap();
+        rl.add_reg(&reg);
+        
+        for r in rl.regions() {
+            eprintln!("{:?}", r)
+        }
+        
+        panic!("OOOOK!")
     }
 }

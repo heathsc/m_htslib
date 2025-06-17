@@ -7,7 +7,7 @@ use crate::{
         HTS_IDX_NOCOOR, HTS_IDX_START, HtsError, HtsPos,
         traits::{IdMap, SeqId},
     },
-    region::region_list::RegionCoords,
+    region::region_list::{RegionCtg, RegionCoords},
 };
 
 #[derive(Debug)]
@@ -56,6 +56,19 @@ impl HtsRegion<'_> {
     }
 }
 
+impl <'a> HtsRegion<'a> {
+    pub fn new(ctg: &'a RegionCtg, coords: &RegionCoords) -> Self {
+        match ctg {
+            RegionCtg::All => Self::All,
+            RegionCtg::Unmapped => Self::Unmapped,
+            RegionCtg::Contig(c) => Self::Contig(HtsCtgRegion { contig: c.as_c_str(), coords: *coords })
+        }
+    }
+}
+
+
+/// A region that is specific for a particular Hts file (in respect of the contig ids) and
+/// that can be passed to htslib iterators etc.
 #[derive(Debug)]
 pub struct HtslibRegion {
     tid: c_int,
