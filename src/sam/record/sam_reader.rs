@@ -4,7 +4,10 @@ use libc::c_int;
 
 use crate::{
     SamError,
-    hts::{HtsFile, HtsFileRaw, traits::ReadRec},
+    hts::{
+        HtsFile, HtsFileRaw,
+        traits::{HdrType, IdMap, ReadRec, SeqId},
+    },
     sam::{SamHdr, SamHdrRaw},
 };
 
@@ -41,13 +44,39 @@ impl ReadRec for SamReader<'_, '_, '_> {
     }
 }
 
+impl HdrType for SamReader<'_, '_, '_> {
+    fn hdr_type(&self) -> crate::hts::traits::HtsHdrType {
+        self.hdr.hdr_type()
+    }
+}
+
+impl SeqId for SamReader<'_, '_, '_> {
+    fn seq_id(&self, s: &std::ffi::CStr) -> Option<usize> {
+        self.hdr.seq_id(s)
+    }
+}
+
+impl IdMap for SamReader<'_, '_, '_> {
+    fn seq_len(&self, i: usize) -> Option<usize> {
+        self.hdr.seq_len(i)
+    }
+    
+    fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {
+        self.hdr.seq_name(i)
+    }
+    
+    fn num_seqs(&self) -> usize {
+        self.hdr.num_seqs()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(unused)]
 
     use super::*;
 
-    use crate::hts::HtsFile;
+    use crate::hts::{HtsFile, traits::IdMap};
 
     #[test]
     fn test_read_sam() {
@@ -56,28 +85,30 @@ mod tests {
         let hdr = SamHdr::read(&mut h).expect("Failed to read header");
         let mut rec = BamRec::new();
         let mut reader = SamReader::new(&mut h, &hdr);
-        
+
         let mut n = 0;
         while let Some(r) = reader.read_rec(&mut rec).unwrap() {
             eprintln!("{:?}", r.qname());
-            n+=1;
+            n += 1;
         }
-        
+
         assert_eq!(n, 4);
-    }    #[test]
+    }
+    #[test]
     fn test_read_cram() {
-        let mut h =
-            HtsFile::open(c"test/test_input_1_a.cram", c"r").expect("Failed to read test/test_input_1_a.cram");
+        let mut h = HtsFile::open(c"test/test_input_1_a.cram", c"r")
+            .expect("Failed to read test/test_input_1_a.cram");
         let hdr = SamHdr::read(&mut h).expect("Failed to read header");
         let mut rec = BamRec::new();
         let mut reader = SamReader::new(&mut h, &hdr);
-        
+
         let mut n = 0;
         while let Some(r) = reader.read_rec(&mut rec).unwrap() {
-            eprintln!("{:?}", r.qname());
-            n+=1;
+            let ctg = r.tid().and_then(|i| reader.seq_name(i));
+            eprintln!("{:?} {:?}", r.qname(), ctg);
+            n += 1;
         }
-        
+
         assert_eq!(n, 15);
     }
 }
