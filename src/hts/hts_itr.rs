@@ -5,28 +5,28 @@ use std::{
 
 use c2rust_bitfields::BitfieldStruct;
 
-use libc::{c_char, c_int, c_short, c_uchar, c_uint, c_void, off_t, size_t, ssize_t};
+use libc::{c_int, c_uchar, c_void};
 
 use crate::{bgzf::BgzfRaw, hts::HtsPos};
 
 #[repr(C)]
-pub struct HtsReglist {
+struct HtsReglist {
     _unused: [u8; 0],
 }
 
 #[repr(C)]
-pub struct HtsPair64Max {
+struct HtsPair64Max {
     _unused: [u8; 0],
 }
 
 #[repr(C)]
-pub struct HtsItrBins {
+struct HtsItrBins {
     n: c_int,
     m: c_int,
     a: *mut c_int,
 }
 
-pub type HtsReadrecFunc = unsafe extern "C" fn(
+type HtsReadrecFunc = unsafe extern "C" fn(
     fp: *mut BgzfRaw,
     data: *mut c_void,
     r: *mut c_void,
@@ -35,12 +35,12 @@ pub type HtsReadrecFunc = unsafe extern "C" fn(
     end: *mut HtsPos,
 ) -> c_int;
 
-pub type HtsSeekFunc = unsafe extern "C" fn(fp: *mut c_void, offset: i64, where_: c_int);
-pub type HtsTellFunc = unsafe extern "C" fn(fp: *mut c_void);
+type HtsSeekFunc = unsafe extern "C" fn(fp: *mut c_void, offset: i64, where_: c_int);
+type HtsTellFunc = unsafe extern "C" fn(fp: *mut c_void);
 
 #[repr(C)]
 #[derive(BitfieldStruct)]
-pub struct HtsItrRaw {
+struct HtsItrRaw {
     #[bitfield(name = "read_rest", ty = "c_uchar", bits = "0..=0")]
     #[bitfield(name = "finished", ty = "c_uchar", bits = "1..=1")]
     #[bitfield(name = "is_cram", ty = "c_uchar", bits = "2..=2")]
@@ -71,7 +71,7 @@ pub struct HtsItrRaw {
 
 #[link(name = "hts")]
 unsafe extern "C" {
-       pub(super) fn hts_itr_destroy(idx: *mut HtsItrRaw);
+       fn hts_itr_destroy(idx: *mut HtsItrRaw);
     
 }
 
@@ -79,17 +79,13 @@ pub struct HtsItr {
     inner: NonNull<HtsItrRaw>
 }
 
-impl Deref for HtsItr {
-    type Target = HtsItrRaw;
-
-    fn deref(&self) -> &Self::Target {
+impl HtsItr {
+    fn deref(&self) -> &HtsItrRaw {
         // We can do this safely as self.inner is always non-null
         unsafe { self.inner.as_ref() }
     }
-}
 
-impl DerefMut for HtsItr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn deref_mut(&mut self) -> &mut HtsItrRaw {
         // We can do this safely as self.inner is always non-null
         unsafe { self.inner.as_mut() }
     }
