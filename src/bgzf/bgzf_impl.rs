@@ -3,7 +3,6 @@ use super::bgzf_error::BgzfError;
 use c2rust_bitfields::BitfieldStruct;
 use std::{
     ffi::CStr,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -444,12 +443,11 @@ pub enum BgzfCompression {
     Gzip,
 }
 
-pub struct Bgzf<'a> {
+pub struct Bgzf {
     inner: NonNull<BgzfRaw>,
-    phantom: PhantomData<&'a mut BgzfRaw>,
 }
 
-impl Deref for Bgzf<'_> {
+impl Deref for Bgzf {
     type Target = BgzfRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -458,17 +456,16 @@ impl Deref for Bgzf<'_> {
     }
 }
 
-impl DerefMut for Bgzf<'_> {
+impl DerefMut for Bgzf {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { self.inner.as_mut() }
     }
 }
 
-unsafe impl Send for Bgzf<'_> {}
-unsafe impl Sync for Bgzf<'_> {}
+unsafe impl Send for Bgzf {}
 
-impl Drop for Bgzf<'_> {
+impl Drop for Bgzf {
     fn drop(&mut self) {
         unsafe {
             bgzf_close(self.deref_mut());
@@ -476,7 +473,7 @@ impl Drop for Bgzf<'_> {
     }
 }
 
-impl Bgzf<'_> {
+impl Bgzf {
     /// Open specified file for reading or writing.
     ///
     /// `mode` matching \[rwag]\[u0-9]\: 'r' for reading, 'w' for
@@ -518,7 +515,6 @@ impl Bgzf<'_> {
             None => Err(BgzfError::OpenError),
             Some(p) => Ok(Self {
                 inner: p,
-                phantom: PhantomData,
             }),
         }
     }
@@ -528,12 +524,12 @@ impl Bgzf<'_> {
 mod tests {
     use super::*;
 
-    struct TstBgzf<'a> {
-        bgzf: Bgzf<'a>,
+    struct TstBgzf {
+        bgzf: Bgzf,
         name: *mut c_char,
         index: bool,
     }
-    impl TstBgzf<'_> {
+    impl TstBgzf {
         fn new() -> Self {
             let name = unsafe { libc::strdup(c"test/htslib_test_XXXXXX".as_ptr()) };
             let fd = unsafe { libc::mkstemp(name) };
@@ -580,7 +576,7 @@ mod tests {
         }
     }
 
-    impl Drop for TstBgzf<'_> {
+    impl Drop for TstBgzf {
         fn drop(&mut self) {
             if !self.name.is_null() {
                 unsafe {

@@ -1,11 +1,13 @@
 use std::{ffi::CStr, iter::FusedIterator};
 
+use super::hts_itr::HtsItr;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HtsHdrType {
     Sam, // SAM/BAM/CRAM
     Vcf, // Unlike SAM/BAM/CRAN, VCF and BCF need to be handled separately
     Bcf,
-    Tbx, // Tabix indexed files
+    Tbx,   // Tabix indexed files
     Faidx, // Faidx indexed files
 }
 
@@ -16,7 +18,7 @@ pub trait HdrType {
 /// Look up sequence (contig) internal ID in header dictionary (i.e., SAM/BAM/CRAM/VCF/BCF/TBX)
 ///
 /// It is required that internal IDs are contiguous, starting from 0
-pub trait SeqId : HdrType {
+pub trait SeqId: HdrType {
     /// Convert a sequence name (as a &`CStr`) to am internal id, returning None
     /// if the requested contig is not found.
     fn seq_id(&self, s: &CStr) -> Option<usize>;
@@ -34,7 +36,11 @@ pub trait IdMap: Sized + HdrType {
     fn num_seqs(&self) -> usize;
 
     fn seq_iter(&self) -> impl Iterator<Item = &CStr> {
-        SeqIter{hdr: self, ix: 0, end: self.num_seqs()}
+        SeqIter {
+            hdr: self,
+            ix: 0,
+            end: self.num_seqs(),
+        }
     }
 }
 
@@ -44,39 +50,47 @@ pub struct SeqIter<'a, T> {
     end: usize,
 }
 
-impl <'a, T> Iterator for SeqIter<'a, T> 
-where T: IdMap
+impl<'a, T> Iterator for SeqIter<'a, T>
+where
+    T: IdMap,
 {
     type Item = &'a CStr;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.ix < self.end {
             let s = self.hdr.seq_name(self.ix);
             self.ix += 1;
             s
-            
         } else {
             None
         }
     }
-    
+
     fn size_hint(&self) -> (usize, Option<usize>) {
         let sz = self.end.saturating_sub(self.ix);
         (sz, Some(sz))
     }
-    
+
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         self.ix = self.end.min(self.ix + n);
         self.next()
     }
 }
 
-impl <T: IdMap> ExactSizeIterator for SeqIter<'_, T> {}
-impl <T: IdMap> FusedIterator for SeqIter<'_, T> {}
+impl<T: IdMap> ExactSizeIterator for SeqIter<'_, T> {}
+impl<T: IdMap> FusedIterator for SeqIter<'_, T> {}
 
 pub trait ReadRec {
     type Rec;
     type Err;
-    
+
     fn read_rec<'a>(&mut self, rec: &'a mut Self::Rec) -> Result<Option<&'a Self::Rec>, Self::Err>;
+}
+
+pub trait ReadRecIter: ReadRec {
+    fn read_rec_iter<'a>(
+        &mut self,
+        itr: &mut HtsItr,
+        rec: &'a mut Self::Rec,
+    ) -> Result<Option<&'a Self::Rec>, Self::Err>;
 }

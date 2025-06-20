@@ -1,13 +1,15 @@
-use std::ops::DerefMut;
+use std::{ops::{Deref, DerefMut}, ptr::null_mut};
 
-use libc::c_int;
+use libc::{c_char, c_int, c_void};
 
 use crate::{
-    SamError,
+    HtsError, SamError,
     hts::{
-        HtsFile, HtsFileRaw,
-        traits::{HdrType, IdMap, ReadRec, SeqId},
+        HtsFile, HtsFileRaw, HtsIdx, HtsPos, HtsIdxRaw, HtsRegion, HtsCtgRegion,
+        hts_itr::{HtsItr, HtsItrRaw, hts_itr_next},
+        traits::{HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
     },
+    region::region_list::RegionCoords,
     sam::{SamHdr, SamHdrRaw},
 };
 
@@ -16,16 +18,48 @@ use super::{BamRec, bam1::bam1_t};
 #[link(name = "hts")]
 unsafe extern "C" {
     fn sam_read1(fp_: *mut HtsFileRaw, hd_: *mut SamHdrRaw, b_: *mut bam1_t) -> c_int;
+    unsafe fn sam_itr_queryi(idx: *const HtsIdxRaw, tid: c_int, beg: HtsPos, end: HtsPos) -> *mut HtsItrRaw;
+    unsafe fn sam_index_load(fp_: *mut HtsFileRaw, fn_: *const c_char) -> *mut HtsIdxRaw;
 }
 
 pub struct SamReader<'a: 'b, 'b, 'c> {
     hts_file: &'b mut HtsFile<'a>,
     hdr: &'c SamHdr,
+    idx: Option<HtsIdx>,
 }
 
 impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
     pub fn new(hts_file: &'b mut HtsFile<'a>, hdr: &'c SamHdr) -> Self {
-        Self { hts_file, hdr }
+        Self { hts_file, hdr, idx: None }
+    }
+
+    pub fn region_iter(
+        &mut self,
+        region: &HtsRegion,
+    ) -> Result<Option<HtsItr>, SamError> {
+        if self.idx.is_none() {
+            let hts_raw = self.hts_file.deref_mut();
+
+            let fname = hts_raw.file_name_ptr();
+            let idx_ptr = unsafe { sam_index_load(hts_raw, fname)};
+            let idx = HtsIdx::mk_hts_idx(idx_ptr, HtsError::IOError)
+                    .map_err(|_| SamError::OperationFailed)?;
+            self.idx = Some(idx);
+        }
+
+        let reg = region
+            .make_htslib_region(self.hdr)
+            .map(Some)
+            .or_else(|e| match e {
+                HtsError::UnknownContig(_) => Ok(None),
+                HtsError::InvalidRegion => Err(SamError::InvalidRegion(format!("{:?}", region))),
+                _ => panic!("Unknown error"),
+            })?;
+
+        Ok(reg.and_then(|r| {
+            let idx = self.idx.as_ref().unwrap();
+            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end())})
+        }))
     }
 }
 
@@ -39,6 +73,33 @@ impl ReadRec for SamReader<'_, '_, '_> {
         match unsafe { sam_read1(self.hts_file.deref_mut(), hdr, rec.as_mut_ptr()) } {
             0.. => Ok(Some(rec)),
             -1 => Ok(None), // EOF
+            e => Err(SamError::SamReadError(e)),
+        }
+    }
+}
+
+impl ReadRecIter for SamReader<'_, '_, '_> {
+    fn read_rec_iter<'a>(
+        &mut self,
+        itr: &mut HtsItr,
+        rec: &'a mut Self::Rec,
+    ) -> Result<Option<&'a Self::Rec>, Self::Err> {
+        let bgzf = self
+            .hts_file
+            .bgzf_desc()
+            .map(|p| p.as_ptr())
+            .unwrap_or_else(null_mut);
+
+        match unsafe {
+            hts_itr_next(
+                bgzf,
+                itr.deref_mut(),
+                rec.as_mut_ptr() as *mut c_void,
+                self.hts_file.deref_mut() as *mut HtsFileRaw as *mut c_void,
+            )
+        } {
+            0.. => Ok(Some(rec)),
+            -1 => Ok(None),
             e => Err(SamError::SamReadError(e)),
         }
     }
@@ -60,11 +121,11 @@ impl IdMap for SamReader<'_, '_, '_> {
     fn seq_len(&self, i: usize) -> Option<usize> {
         self.hdr.seq_len(i)
     }
-    
+
     fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {
         self.hdr.seq_name(i)
     }
-    
+
     fn num_seqs(&self) -> usize {
         self.hdr.num_seqs()
     }
@@ -76,7 +137,7 @@ mod tests {
 
     use super::*;
 
-    use crate::hts::{HtsFile, traits::IdMap};
+    use crate::{region::reg::{Reg, Region}, hts::{HtsFile, traits::IdMap}};
 
     #[test]
     fn test_read_sam() {
@@ -105,10 +166,35 @@ mod tests {
         let mut n = 0;
         while let Some(r) = reader.read_rec(&mut rec).unwrap() {
             let ctg = r.tid().and_then(|i| reader.seq_name(i));
-            eprintln!("{:?} {:?}", r.qname(), ctg);
+            eprintln!("{:?} {:?} {:?}", r.qname(), ctg, r.pos());
             n += 1;
         }
 
         assert_eq!(n, 15);
     }
+
+    #[test]
+    fn test_read_cram_iter() {
+        let mut h = HtsFile::open(c"test/test_input_1_a.cram", c"r")
+            .expect("Failed to read test/test_input_1_a.cram");
+        let hdr = SamHdr::read(&mut h).expect("Failed to read header");
+
+        let mut rec = BamRec::new();
+        let mut reader = SamReader::new(&mut h, &hdr);
+        let reg = Reg::from_u8_slice(b"ref2:25-").unwrap();
+        let region = Region::from_reg(&reg);
+        let hreg: HtsRegion = HtsRegion::from(&region);
+
+        let mut itr = reader.region_iter(&hreg).unwrap().unwrap();
+        
+        let mut n = 0;
+        while let Some(r) = reader.read_rec_iter(&mut itr, &mut rec).unwrap() {
+            let ctg = r.tid().and_then(|i| reader.seq_name(i));
+            eprintln!("{:?} {:?} {:?}", r.qname(), ctg, r.pos());
+            n += 1;
+        }
+
+        assert_eq!(n, 4);
+    }
+
 }

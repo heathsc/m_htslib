@@ -427,7 +427,7 @@ impl HtsIdx {
         })
     }
 
-    fn mk_hts_idx(p: *mut HtsIdxRaw, err: HtsError) -> Result<Self, HtsError> {
+    pub(crate) fn mk_hts_idx(p: *mut HtsIdxRaw, err: HtsError) -> Result<Self, HtsError> {
         match NonNull::new(p) {
             None => Err(err),
             Some(p) => Ok(Self {

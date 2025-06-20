@@ -8,7 +8,6 @@ use crate::{
 use libc::{c_char, c_int, off_t};
 use std::{
     ffi::CStr,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -110,12 +109,11 @@ impl CramFdRaw {
     }
 }
 
-pub struct CramFd<'a> {
+pub struct CramFd {
     inner: NonNull<CramFdRaw>,
-    phantom: PhantomData<&'a mut CramFdRaw>,
 }
 
-impl Deref for CramFd<'_> {
+impl Deref for CramFd {
     type Target = CramFdRaw;
 
     fn deref(&self) -> &Self::Target {
@@ -124,17 +122,16 @@ impl Deref for CramFd<'_> {
     }
 }
 
-impl DerefMut for CramFd<'_> {
+impl DerefMut for CramFd {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // We can do this safely as self.inner is always non-null
         unsafe { self.inner.as_mut() }
     }
 }
 
-unsafe impl Send for CramFd<'_> {}
-unsafe impl Sync for CramFd<'_> {}
+unsafe impl Send for CramFd {}
 
-impl Drop for CramFd<'_> {
+impl Drop for CramFd {
     fn drop(&mut self) {
         unsafe {
             cram_close(self.deref_mut());
@@ -142,7 +139,7 @@ impl Drop for CramFd<'_> {
     }
 }
 
-impl CramFd<'_> {
+impl CramFd {
     #[inline]
     pub fn open(name: &CStr, mode: &CStr) -> Result<Self, CramError> {
         Self::make_cram_file(unsafe { cram_open(name.as_ptr(), mode.as_ptr()) })
@@ -158,7 +155,6 @@ impl CramFd<'_> {
             Some(p) => {
                 Ok(Self {
                     inner: p,
-                    phantom: PhantomData,
                 })
             }
             None => Err(CramError::OpenError)

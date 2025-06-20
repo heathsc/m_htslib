@@ -97,4 +97,6 @@ pub enum SamError {
     INumError(#[from] ParseINumError),
     #[error("Error reading from SAM/BAM/CRAM file: {0}")]
     SamReadError(c_int),
+    #[error("Query region invalid: {0}")]
+    InvalidRegion(String),
 }

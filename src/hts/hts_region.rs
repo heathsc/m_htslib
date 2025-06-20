@@ -7,7 +7,10 @@ use crate::{
         HTS_IDX_NOCOOR, HTS_IDX_START, HtsError, HtsPos,
         traits::{IdMap, SeqId},
     },
-    region::region_list::{RegionCtg, RegionCoords},
+    region::{
+        reg::{Region, RegionContig},
+        region_list::{RegionCoords, RegionCtg},
+    },
 };
 
 #[derive(Debug)]
@@ -16,7 +19,7 @@ pub struct HtsCtgRegion<'a> {
     coords: RegionCoords,
 }
 
-impl HtsCtgRegion<'_> {
+impl<'a> HtsCtgRegion<'a> {
     pub fn make_htslib_region<T: IdMap + SeqId>(&self, h: &T) -> Result<HtslibRegion, HtsError> {
         match h.seq_id(self.contig) {
             Some(i) => {
@@ -28,6 +31,12 @@ impl HtsCtgRegion<'_> {
             }
             None => Err(HtsError::UnknownContig(self.contig.to_owned())),
         }
+    }
+
+    fn new(contig: &'a CStr, start: HtsPos, end: Option<HtsPos>) -> Self {
+        // Shouldn't happen as this is an internal function and the parameters should have been checked
+        let coords = RegionCoords::new(start, end).expect("Bad coordinates");
+        Self { contig, coords }
     }
 }
 
@@ -56,16 +65,46 @@ impl HtsRegion<'_> {
     }
 }
 
-impl <'a> HtsRegion<'a> {
-    pub fn new(ctg: &'a RegionCtg, coords: &RegionCoords) -> Self {
-        match ctg {
-            RegionCtg::All => Self::All,
-            RegionCtg::Unmapped => Self::Unmapped,
-            RegionCtg::Contig(c) => Self::Contig(HtsCtgRegion { contig: c.as_c_str(), coords: *coords })
+fn mk_hts_region_contig<'a>(
+    c: &'a RegionContig,
+    start: usize,
+    end: Option<HtsPos>,
+) -> HtsRegion<'a> {
+    HtsRegion::Contig(HtsCtgRegion::new(c.as_cstr(), start as HtsPos, end))
+}
+
+impl<'a> From<&'a Region> for HtsRegion<'a> {
+    fn from(r: &'a Region) -> Self {
+        match r {
+            Region::Chrom(c) => mk_hts_region_contig(c, 0, None),
+            Region::Open(c, x) => mk_hts_region_contig(c, *x, None),
+            Region::Closed(c, x, y) => mk_hts_region_contig(c, *x, Some(y.get() as HtsPos)),
+            Region::All => Self::All,
+            Region::Unmapped => Self::Unmapped,
         }
     }
 }
 
+impl<'a> HtsRegion<'a> {
+    pub fn new(ctg: &'a RegionCtg, coords: &RegionCoords) -> Self {
+        match ctg {
+            RegionCtg::All => Self::All,
+            RegionCtg::Unmapped => Self::Unmapped,
+            RegionCtg::Contig(c) => Self::Contig(HtsCtgRegion {
+                contig: c.as_c_str(),
+                coords: *coords,
+            }),
+        }
+    }
+
+    pub fn new_unmapped() -> Self {
+        Self::Unmapped
+    }
+
+    pub fn new_all() -> Self {
+        Self::All
+    }
+}
 
 /// A region that is specific for a particular Hts file (in respect of the contig ids) and
 /// that can be passed to htslib iterators etc.
@@ -74,6 +113,22 @@ pub struct HtslibRegion {
     tid: c_int,
     start: HtsPos,
     end: HtsPos,
+}
+
+impl HtslibRegion {
+    #[inline]
+    pub fn tid(&self) -> c_int {
+        self.tid
+    }
+
+    #[inline]
+    pub fn start(&self) -> HtsPos {
+        self.start
+    }
+    #[inline]
+    pub fn end(&self) -> HtsPos {
+        self.end
+    }
 }
 
 #[cfg(test)]
@@ -86,7 +141,7 @@ mod tests {
             HtsFile,
             traits::{IdMap, SeqId},
         },
-        region::region_list::RegionCoords,
+        region::{reg::{Reg, Region}, region_list::RegionCoords},
         sam::SamHdr,
     };
 
@@ -104,7 +159,7 @@ mod tests {
         eprintln!("{:?}", hr);
         assert_eq!(hr.end, 200);
         assert_eq!(hr.start, 24);
-        
+
         let reg = HtsCtgRegion {
             contig: c"000000F",
             coords: RegionCoords::new(24, Some(2000)).unwrap(),
@@ -113,7 +168,7 @@ mod tests {
         let hr = hreg.make_htslib_region(&hdr).unwrap();
         eprintln!("{:?}", hr);
         assert_eq!(hr.end, 686);
-        
+
         let reg = HtsCtgRegion {
             contig: c"000000F",
             coords: RegionCoords::new(24, None).unwrap(),
@@ -122,5 +177,20 @@ mod tests {
         let hr = hreg.make_htslib_region(&hdr).unwrap();
         eprintln!("{:?}", hr);
         assert_eq!(hr.end, 686)
+    }
+    
+    #[test]
+    fn region_test2() {
+        let mut hts = HtsFile::open(c"test/realn01.sam", c"r").unwrap();
+        let hdr = SamHdr::read(&mut hts).unwrap();
+
+        let reg = Reg::from_u8_slice(b"000000F:25-200").unwrap();
+        let region = Region::from_reg(&reg);
+        let hreg: HtsRegion = HtsRegion::from(&region);
+        let hr = hreg.make_htslib_region(&hdr).unwrap();
+        
+        eprintln!("{:?}", hr);
+        assert_eq!(hr.end, 200);
+        assert_eq!(hr.start, 24);
     }
 }

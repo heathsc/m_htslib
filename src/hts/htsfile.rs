@@ -27,7 +27,7 @@ pub(crate) struct HtsFilter {
 }
 
 #[repr(C)]
-union HtsFileType {
+union HtsFileTypeRaw {
     bgzf: *mut BgzfRaw,
     cram_fd: *mut CramFdRaw,
     hfile: *mut HFileRaw,
@@ -36,18 +36,18 @@ union HtsFileType {
 #[repr(C)]
 #[derive(BitfieldStruct)]
 pub struct HtsFileRaw {
-    #[bitfield(name = "is_bin", ty = "c_uchar", bits = "0..=0")]
-    #[bitfield(name = "is_write", ty = "c_uchar", bits = "1..=1")]
-    #[bitfield(name = "is_be", ty = "c_uchar", bits = "2..=2")]
-    #[bitfield(name = "is_cram", ty = "c_uchar", bits = "3..=3")]
-    #[bitfield(name = "is_bgzf", ty = "c_uchar", bits = "4..=4")]
+    #[bitfield(name = "_is_bin", ty = "c_uchar", bits = "0..=0")]
+    #[bitfield(name = "_is_write", ty = "c_uchar", bits = "1..=1")]
+    #[bitfield(name = "_is_be", ty = "c_uchar", bits = "2..=2")]
+    #[bitfield(name = "_is_cram", ty = "c_uchar", bits = "3..=3")]
+    #[bitfield(name = "_is_bgzf", ty = "c_uchar", bits = "4..=4")]
     #[bitfield(name = "dummy", ty = "u32", bits = "5..=31")]
     bfield: [u8; 4],
     lineno: i64,
     line: KString,
     fn_: *mut c_char,
     fn_aux: *mut c_char,
-    fp: HtsFileType,
+    fp: HtsFileTypeRaw,
     state: *mut c_void,
     format: HtsFormat,
     idx: *mut HtsIdxRaw,
@@ -76,7 +76,6 @@ unsafe extern "C" {
     fn hts_set_fai_filename(fp: *mut HtsFileRaw, expr: *const c_char) -> c_int;
     fn hts_set_filter_expression(fp: *mut HtsFileRaw, fn_aux: *const c_char) -> c_int;
     fn hts_check_EOF(fp: *mut HtsFileRaw) -> c_int;
-
 }
 
 impl HtsFileRaw {
@@ -162,10 +161,41 @@ impl HtsFileRaw {
         }
     }
 
+    pub(crate) fn file_name_ptr(&self) -> *const c_char {
+        let p = self.fn_;
+        assert!(!p.is_null(), "File name in HtsFileRaw is null");
+        p
+    }
+    
     #[inline]
     pub fn set_opt(&mut self, opt: &mut HtsFmtOption) -> Result<(), HtsError> {
         hts_file_set_opt(self, opt)
     }
+
+    #[inline]
+    pub fn is_bin(&self) -> bool {
+        self._is_bin() != 0
+    }
+    
+    #[inline]
+    pub fn is_bgzf(&self) -> bool {
+        self._is_bgzf() != 0
+    }   
+    
+    #[inline]
+    pub fn is_be(&self) -> bool {
+        self._is_be() != 0
+    }
+    
+    #[inline]
+    pub fn is_write(&self) -> bool {
+        self._is_write() != 0
+    }
+    
+    #[inline]
+    pub fn is_cram(&self) -> bool {
+        self._is_cram() != 0
+    } 
 }
 
 pub struct HtsFile<'a> {
@@ -292,4 +322,28 @@ impl HtsFile<'_> {
             }),
         }
     }
+
+    pub fn file_desc(&mut self) -> HtsFileType {
+        if self.is_bgzf() {
+            HtsFileType::Bgzf(NonNull::new(unsafe { self.fp.bgzf }).expect("Null BGZP file ptr"))
+        } else if self.is_cram() {
+            HtsFileType::Cram(NonNull::new(unsafe { self.fp.cram_fd }).expect("Null CRAM file ptr"))
+        } else {
+            HtsFileType::HFile(NonNull::new(unsafe { self.fp.hfile }).expect("Null HFile file ptr"))
+        }
+    }
+    
+    pub fn bgzf_desc(&mut self) -> Option<NonNull<BgzfRaw>> {
+        if self.is_bgzf() {
+            NonNull::new(unsafe { self.fp.bgzf })
+        } else {
+            None
+        }
+    }
+}
+
+pub enum HtsFileType {
+    Bgzf(NonNull<BgzfRaw>),
+    Cram(NonNull<CramFdRaw>),
+    HFile(NonNull<HFileRaw>),
 }

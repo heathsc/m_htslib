@@ -16,6 +16,7 @@ pub mod traits;
 pub use hfile::*;
 pub use hts_format::*;
 pub use hts_idx::*;
+pub use hts_region::*;
 // pub use hts_ocstr::*;
 pub use hts_opt::*;
 pub use hts_thread_pool::*;

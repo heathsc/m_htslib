@@ -3,10 +3,7 @@ use std::{collections::HashMap, ffi::CString, num::NonZero, sync::Arc};
 use super::reg::Reg;
 use crate::{
     HtsError,
-    hts::{
-        HtsPos,
-        hts_region::{HtsRegion, HtslibRegion},
-    },
+    hts::{HtsPos, hts_region::HtsRegion},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -63,7 +60,7 @@ impl Region {
     fn make(reg: &Reg, rl: &mut RegionList) -> Self {
         let ctg_id = rl.add_or_lookup_ctg(reg);
         let (start, end) = match reg {
-            Reg::Chrom(_) | Reg::All | Reg::UnMapped => (0, None),
+            Reg::Chrom(_) | Reg::All | Reg::Unmapped => (0, None),
             Reg::Open(_, x) => (*x as HtsPos, None),
             Reg::Closed(_, x, y) => {
                 // We know that y is > 0 so this transformation is safe
@@ -91,7 +88,7 @@ impl RegionCtg {
                 Self::Contig(CString::new(c.as_bytes()).expect("Bad contig name"))
             }
             Reg::All => Self::All,
-            Reg::UnMapped => Self::Unmapped,
+            Reg::Unmapped => Self::Unmapped,
         }
     }
 }
@@ -158,23 +155,20 @@ mod tests {
     #![allow(unused)]
 
     use super::*;
-    
+
     use crate::region::reg::Reg;
-    
+
     #[test]
     fn test_reg_list() {
         let mut rl = RegionList::new();
-        let reg = Reg::from_region(b"chr5:1000-2000").unwrap();
+        let reg = Reg::try_from(b"chr5:1000-2000").unwrap();
         rl.add_reg(&reg);
-        let reg = Reg::from_region(b"chr5:1.2M-1.43M").unwrap();
+        let reg = Reg::try_from("chr5:1.2M-1.43M").unwrap();
         rl.add_reg(&reg);
-        let reg = Reg::from_region(b"chr7:252654").unwrap();
+        let reg = Reg::try_from("chr7:252654").unwrap();
         rl.add_reg(&reg);
+
+        let r = rl.regions().nth(1).unwrap();
         
-        for r in rl.regions() {
-            eprintln!("{:?}", r)
-        }
-        
-        panic!("OOOOK!")
     }
 }
