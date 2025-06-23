@@ -7,7 +7,7 @@ use crate::{
     int_utils::{parse_decimal, skip_space},
 };
 
-use super::traits::*;
+use super::{RegionCoords, traits::*};
 
 /// Matches when the contig is disambiguated using brackets i.e.., {chr2}
 /// The Regex for the contig name comes from the VCF4.3 spec
@@ -71,7 +71,7 @@ impl RegionContig {
     pub fn from_u8_slice(s: &[u8]) -> Result<(Self, &[u8], bool), HtsError> {
         RegContig::from_u8_slice(s).map(|(ctg, r, colon)| (ctg.to_owned(), r, colon))
     }
-    
+
     #[inline]
     pub fn as_cstr(&self) -> &CStr {
         unsafe { CStr::from_bytes_with_nul_unchecked(self.to_bytes_with_nul()) }
@@ -150,6 +150,38 @@ impl RegContig {
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for &'a RegContig {
+    type Error = HtsError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        RegContig::from_u8_slice(value).map(|(r, _, _)| r)
+    }
+}
+
+impl<'a, const N: usize> TryFrom<&'a [u8; N]> for &'a RegContig {
+    type Error = HtsError;
+
+    fn try_from(value: &'a [u8; N]) -> Result<Self, Self::Error> {
+        RegContig::from_u8_slice(value).map(|(r, _, _)| r)
+    }
+}
+
+impl<'a> TryFrom<&'a CStr> for &'a RegContig {
+    type Error = HtsError;
+
+    fn try_from(value: &'a CStr) -> Result<Self, Self::Error> {
+        RegContig::from_u8_slice(value.to_bytes()).map(|(r, _, _)| r)
+    }
+}
+
+impl<'a> TryFrom<&'a str> for &'a RegContig {
+    type Error = HtsError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        RegContig::from_u8_slice(value.as_bytes()).map(|(r, _, _)| r)
     }
 }
 
@@ -286,6 +318,41 @@ impl<'a> Reg<'a> {
             (_, _) => Err(HtsError::TrailingGarbage),
         }
     }
+
+    pub fn parse_bed_from_str(s: &'a str) -> Result<Self, HtsError> {
+        Self::parse_bed_from_u8_slice(s.as_bytes())
+    }
+
+    pub fn parse_bed_from_u8_slice(s: &'a [u8]) -> Result<Self, HtsError> {
+        let (ctg, s, _) = RegContig::from_u8_slice(s)?;
+        if s.is_empty() {
+            Ok(Self::Chrom(ctg))
+        } else {
+            Self::parse_bed_range(s, ctg)
+        }
+    }
+
+    fn parse_bed_range(s: &[u8], ctg: &'a RegContig) -> Result<Self, HtsError> {
+        let mk_nz = |i: i64| unsafe { NonZero::new_unchecked(i as usize) };
+
+        let mut iter = s.split(|c| *c == b'\t');
+        let x = match iter.next().map(|s| parse_decimal(s, true)) {
+            Some(Err(e)) => return Err(HtsError::ParseInumError(e)),
+            Some(Ok((x, &[]))) => x,
+            _ => return Err(HtsError::TrailingGarbage),
+        };
+        let y = match iter.next().map(|s| parse_decimal(s, true)) {
+            Some(Err(e)) => return Err(HtsError::ParseInumError(e)),
+            Some(Ok((y, &[]))) => NonZero::new(y as usize),
+            None => None,
+            _ => return Err(HtsError::TrailingGarbage),
+        };
+
+        match (x, y) {
+            (x, None) => Ok(Self::Closed(ctg, x as usize, mk_nz(x + 1))),
+            (x, Some(y)) => Ok(Self::Closed(ctg, x as usize, y)),
+        }
+    }
 }
 
 impl RegCtgName for Reg<'_> {
@@ -353,6 +420,14 @@ mod tests {
         let reg = Reg::try_from(b"*").unwrap();
         eprintln!("{reg}");
         assert!(matches!(reg, Reg::Unmapped));
-        
+    }
+
+    #[test]
+    fn test_parse_bed() {
+        let reg = Reg::parse_bed_from_str("chr5\t1199999\t1430000").unwrap();
+        eprintln!("{reg}");
+        assert_eq!(reg.contig_name(), "chr5");
+        let y: NonZero<usize> = NonZero::new(1430000).unwrap();
+        assert!(matches!(reg, Reg::Closed(_, 1199999, y)));
     }
 }

@@ -24,7 +24,7 @@ impl RegionCoords {
             (start, None) => Ok(Self { start, end: None }),
         }
     }
-
+    
     /// Convert RegionCoords into a range given by two HtsPos values,
     /// (x, y) where x is 0-offset, y is 1-offset, and x < y.
     /// if the end coordinate is missing or if it is greater than tseq_len,
@@ -106,6 +106,16 @@ impl RegionList {
         Self::default()
     }
 
+    pub fn add<'a, T>(&mut self, s: T) -> Result<(), HtsError> 
+    where 
+        T: TryInto<Reg<'a>>,
+        HtsError: From<<T as TryInto<Reg<'a>>>::Error>
+    {
+        let reg = s.try_into()?;
+        self.add_reg(&reg);
+        Ok(())
+    }
+    
     pub fn add_reg(&mut self, reg: &Reg) {
         let region = Region::make(reg, self);
         self.regions.push(region);

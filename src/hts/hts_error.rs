@@ -46,6 +46,8 @@ pub enum HtsError {
     TrailingGarbage,
     #[error("Invalid region specified")]
     InvalidRegion,
+    #[error("Blank region specified")]
+    BlankRegion,
     #[error("Aux Error: {0}")]
     AuxError(#[from] AuxError),
     #[error("Sam Error: {0}")]
