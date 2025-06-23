@@ -1,4 +1,8 @@
-use std::{iter::FusedIterator, ptr::NonNull};
+use std::{
+    iter::FusedIterator,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
 use c2rust_bitfields::BitfieldStruct;
 
@@ -7,7 +11,9 @@ use libc::{c_int, c_uchar, c_void};
 use crate::{
     bgzf::BgzfRaw,
     hts::{
-        hts_region::HtslibRegion, traits::{HdrType, IdMap, ReadRec, ReadRecIter}, HtsPos
+        HtsPos,
+        hts_region::HtslibRegion,
+        traits::{HdrType, IdMap, ReadRec, ReadRecIter},
     },
 };
 
@@ -116,12 +122,12 @@ impl Drop for HtsItr {
     }
 }
 
-pub(crate) struct HtsRegionSubIter<F, I> 
+struct HtsRegionSubIter<F, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
 {
-    mk_iter: F,
+    mk_hts_iter: F,
     reg_iter: I,
     finished: bool,
 }
@@ -131,9 +137,9 @@ where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
 {
-    pub(crate) fn make(reg_iter: I, mk_iter: F) -> Self {
+    fn make(reg_iter: I, mk_iter: F) -> Self {
         Self {
-            mk_iter,
+            mk_hts_iter: mk_iter,
             reg_iter,
             finished: false,
         }
@@ -153,7 +159,7 @@ where
         } else {
             self.reg_iter
                 .next()
-                .and_then(|r| (self.mk_iter)(&r))
+                .and_then(|r| (self.mk_hts_iter)(&r))
                 .or_else(|| {
                     self.finished = true;
                     None
@@ -169,25 +175,50 @@ where
 {
 }
 
-pub struct HtsRegionIter<F, R, I> 
+pub struct HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
-    R: ReadRecIter,
 {
     sub_iter: Option<HtsRegionSubIter<F, I>>,
+    iter: HtsRegionIter<R>,
+}
+
+pub struct HtsRegionIter<R> {
     read_rec: R,
     current_iter: Option<HtsItr>,
 }
 
-impl<F, R, I> HtsRegionIter<F, R, I>
+impl<F, R, I> Deref for HtsRegionsIter<F, R, I>
+where
+    F: Fn(&HtslibRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtslibRegion>,
+{
+    type Target = HtsRegionIter<R>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.iter
+    }
+}
+
+impl<F, R, I> DerefMut for HtsRegionsIter<F, R, I>
+where
+    F: Fn(&HtslibRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtslibRegion>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.iter
+    }
+}
+
+impl<F, R, I> HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
     R: ReadRecIter,
 {
-    pub(crate) fn make_regions_iter(mut iter: HtsRegionSubIter<F, I>, read_rec: R) -> Self {
-        
+    pub fn make_regions_iter(reg_iter: I, mk_hts_iter: F, read_rec: R) -> Self {
+        let mut iter = HtsRegionSubIter::make(reg_iter, mk_hts_iter);
         let (sub_iter, current_iter) = if let Some(itr) = iter.next() {
             (Some(iter), Some(itr))
         } else {
@@ -196,13 +227,31 @@ where
 
         Self {
             sub_iter,
-            read_rec,
-            current_iter,
+            iter: HtsRegionIter {
+                read_rec,
+                current_iter,
+            },
         }
     }
 }
 
-impl<F, R, I> ReadRec for HtsRegionIter<F, R, I>
+impl<R> HtsRegionIter<R>
+where
+    R: ReadRecIter,
+{
+    pub fn make_region_iter<F: Fn(&HtslibRegion) -> Option<HtsItr>>(
+        region: HtslibRegion,
+        mk_hts_iter: F,
+        read_rec: R,
+    ) -> Self {
+        Self {
+            read_rec,
+            current_iter: mk_hts_iter(&region),
+        }
+    }
+}
+
+impl<F, R, I> ReadRec for HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
@@ -213,11 +262,11 @@ where
 
     fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err> {
         loop {
-            match (self.current_iter.as_mut(), self.sub_iter.as_mut()) {
+            match (self.iter.current_iter.as_mut(), self.sub_iter.as_mut()) {
                 // Iterator finished
                 (None, None) => break Ok(None),
                 (Some(itr), _) => {
-                    if self.read_rec.read_rec_iter(itr, rec)?.is_some() {
+                    if self.iter.read_rec.read_rec_iter(itr, rec)?.is_some() {
                         break Ok(Some(()));
                     } else {
                         self.current_iter = None;
@@ -234,7 +283,48 @@ where
     }
 }
 
-impl<F, R, I> HdrType for HtsRegionIter<F, R, I>
+impl<R> ReadRec for HtsRegionIter<R>
+where
+    R: ReadRecIter,
+{
+    type Err = R::Err;
+    type Rec = R::Rec;
+
+    fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err> {
+        match self.current_iter.as_mut() {
+            Some(itr) => self.read_rec.read_rec_iter(itr, rec),
+            None => Ok(None),
+        }
+    }
+}
+
+impl<R> HdrType for HtsRegionIter<R>
+where
+    R: ReadRecIter + HdrType,
+{
+    fn hdr_type(&self) -> super::traits::HtsHdrType {
+        self.read_rec.hdr_type()
+    }
+}
+
+impl<R> IdMap for HtsRegionIter<R>
+where
+    R: ReadRecIter + IdMap,
+{
+    fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {
+        self.read_rec.seq_name(i)
+    }
+
+    fn num_seqs(&self) -> usize {
+        self.read_rec.num_seqs()
+    }
+
+    fn seq_len(&self, i: usize) -> Option<usize> {
+        self.read_rec.seq_len(i)
+    }
+}
+
+impl<F, R, I> HdrType for HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
@@ -245,7 +335,7 @@ where
     }
 }
 
-impl<F, R, I> IdMap for HtsRegionIter<F, R, I>
+impl<F, R, I> IdMap for HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtslibRegion) -> Option<HtsItr>,
     I: Iterator<Item = HtslibRegion>,
@@ -254,11 +344,11 @@ where
     fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {
         self.read_rec.seq_name(i)
     }
-    
+
     fn num_seqs(&self) -> usize {
         self.read_rec.num_seqs()
     }
-    
+
     fn seq_len(&self, i: usize) -> Option<usize> {
         self.read_rec.seq_len(i)
     }

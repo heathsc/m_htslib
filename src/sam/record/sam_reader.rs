@@ -9,8 +9,8 @@ use crate::{
     HtsError, SamError,
     hts::{
         HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion, HtslibRegion,
-        hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionSubIter, hts_itr_next},
-        traits::{GetIdx, HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
+        hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionsIter, hts_itr_next},
+        traits::{HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
     },
     sam::{SamHdr, SamHdrRaw},
 };
@@ -46,14 +46,31 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
 }
 
 impl SamReader<'_, '_, '_> {
-    pub fn region_iter(self, region: &HtsRegion) -> Result<Option<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap>, SamError> {
-        self.regions_iter([region].into_iter())
+    pub fn region_iter(mut self, region: &HtsRegion) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
+        self.load_idx()?;
+        let idx = self.idx.take().unwrap();
+        let reg = region.make_htslib_region(self.hdr).expect("Invalid region");
+        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
+        };
+        Ok(HtsRegionIter::make_region_iter(reg, f, self))
     }
     
     pub fn regions_iter<'b, 'a: 'b, I: Iterator<Item = &'b HtsRegion<'a>>>(
         mut self,
         regions: I,
-    ) -> Result<Option<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap>, SamError> {
+    ) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
+        self.load_idx()?;
+        let idx = self.idx.take().unwrap();
+        let reg_iter = regions.map(|r| r.make_htslib_region(self.hdr).expect("Invalid region"));
+        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
+        };
+        
+       Ok(HtsRegionsIter::make_regions_iter(reg_iter, f, self))
+    }
+    
+    pub fn load_idx(&mut self) -> Result<(), SamError> {
         if self.idx.is_none() {
             let hts_raw = self.hts_file.deref_mut();
 
@@ -63,29 +80,7 @@ impl SamReader<'_, '_, '_> {
                 .map_err(|_| SamError::OperationFailed)?;
             self.idx = Some(idx);
         }
-
-        let idx = self.idx.take().unwrap();
-
-        /* let reg = region
-        .make_htslib_region(self.hdr)
-        .map(Some)
-        .or_else(|e| match e {
-            HtsError::UnknownContig(_) => Ok(None),
-            HtsError::InvalidRegion => Err(SamError::InvalidRegion(format!("{:?}", region))),
-            _ => panic!("Unknown error"),
-        })?; */
-
-        let reg_iter = regions.map(|r| r.make_htslib_region(self.hdr).expect("Invalid region"));
-
-        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
-            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
-        };
-
-        let sub_iter = HtsRegionSubIter::make(reg_iter, f);
-
-        let it = HtsRegionIter::make_regions_iter(sub_iter, self);
-
-        Ok(Some(it))
+        Ok(())
     }
 }
 
@@ -128,12 +123,6 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
             -1 => Ok(None),
             e => Err(SamError::SamReadError(e)),
         }
-    }
-}
-
-impl GetIdx for SamReader<'_, '_, '_> {
-    fn get_idx(&self) -> Option<&HtsIdx> {
-        self.idx.as_ref()
     }
 }
 
@@ -220,7 +209,7 @@ mod tests {
         let region = Region::from_reg(&reg);
         let hreg: HtsRegion = HtsRegion::from(&region);
 
-        let mut itr = reader.region_iter(&hreg).unwrap().unwrap();
+        let mut itr = reader.region_iter(&hreg).unwrap();
 
         let mut n = 0;
 
@@ -249,7 +238,7 @@ mod tests {
         let hreg2: HtsRegion = HtsRegion::from(&region2);
         let hregs = [hreg1, hreg2];
 
-        let mut itr = reader.regions_iter(hregs.iter()).unwrap().unwrap();
+        let mut itr = reader.regions_iter(hregs.iter()).unwrap();
 
         let mut n = 0;
 

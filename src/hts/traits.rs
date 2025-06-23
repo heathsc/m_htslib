@@ -1,6 +1,6 @@
-use std::{ffi::CStr, iter::FusedIterator, fmt};
+use std::{ffi::CStr, fmt, iter::FusedIterator};
 
-use super::{hts_idx::HtsIdx, hts_itr::HtsItr};
+use super::hts_itr::HtsItr;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HtsHdrType {
@@ -93,8 +93,4 @@ pub trait ReadRecIter: ReadRec {
         itr: &mut HtsItr,
         rec: &mut Self::Rec,
     ) -> Result<Option<()>, Self::Err>;
-}
-
-pub trait GetIdx {
-    fn get_idx(&self) -> Option<&HtsIdx>;
 }
