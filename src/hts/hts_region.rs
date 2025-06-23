@@ -108,7 +108,7 @@ impl<'a> HtsRegion<'a> {
 
 /// A region that is specific for a particular Hts file (in respect of the contig ids) and
 /// that can be passed to htslib iterators etc.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct HtslibRegion {
     tid: c_int,
     start: HtsPos,

@@ -1,15 +1,17 @@
-use std::{ops::{Deref, DerefMut}, ptr::null_mut};
+use std::{
+    ops::{Deref, DerefMut},
+    ptr::null_mut,
+};
 
 use libc::{c_char, c_int, c_void};
 
 use crate::{
     HtsError, SamError,
     hts::{
-        HtsFile, HtsFileRaw, HtsIdx, HtsPos, HtsIdxRaw, HtsRegion, HtsCtgRegion,
-        hts_itr::{HtsItr, HtsItrRaw, hts_itr_next},
-        traits::{HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
+        HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion, HtslibRegion,
+        hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionSubIter, hts_itr_next},
+        traits::{HdrType, GetIdx, IdMap, ReadRec, ReadRecIter, SeqId},
     },
-    region::region_list::RegionCoords,
     sam::{SamHdr, SamHdrRaw},
 };
 
@@ -18,7 +20,12 @@ use super::{BamRec, bam1::bam1_t};
 #[link(name = "hts")]
 unsafe extern "C" {
     fn sam_read1(fp_: *mut HtsFileRaw, hd_: *mut SamHdrRaw, b_: *mut bam1_t) -> c_int;
-    unsafe fn sam_itr_queryi(idx: *const HtsIdxRaw, tid: c_int, beg: HtsPos, end: HtsPos) -> *mut HtsItrRaw;
+    unsafe fn sam_itr_queryi(
+        idx: *const HtsIdxRaw,
+        tid: c_int,
+        beg: HtsPos,
+        end: HtsPos,
+    ) -> *mut HtsItrRaw;
     unsafe fn sam_index_load(fp_: *mut HtsFileRaw, fn_: *const c_char) -> *mut HtsIdxRaw;
 }
 
@@ -30,23 +37,29 @@ pub struct SamReader<'a: 'b, 'b, 'c> {
 
 impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
     pub fn new(hts_file: &'b mut HtsFile<'a>, hdr: &'c SamHdr) -> Self {
-        Self { hts_file, hdr, idx: None }
+        Self {
+            hts_file,
+            hdr,
+            idx: None,
+        }
     }
+}
 
-    pub fn region_iter(
-        &mut self,
-        region: &HtsRegion,
-    ) -> Result<Option<HtsItr>, SamError> {
+impl SamReader<'_, '_, '_> {
+    pub fn region_iter
+    (mut self, region: &HtsRegion) -> Result<Option<impl ReadRec<Rec=BamRec, Err=SamError> + IdMap>, SamError> {
         if self.idx.is_none() {
             let hts_raw = self.hts_file.deref_mut();
 
             let fname = hts_raw.file_name_ptr();
-            let idx_ptr = unsafe { sam_index_load(hts_raw, fname)};
+            let idx_ptr = unsafe { sam_index_load(hts_raw, fname) };
             let idx = HtsIdx::mk_hts_idx(idx_ptr, HtsError::IOError)
-                    .map_err(|_| SamError::OperationFailed)?;
+                .map_err(|_| SamError::OperationFailed)?;
             self.idx = Some(idx);
         }
 
+        let idx = self.idx.take().unwrap();
+        
         let reg = region
             .make_htslib_region(self.hdr)
             .map(Some)
@@ -56,10 +69,24 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
                 _ => panic!("Unknown error"),
             })?;
 
-        Ok(reg.and_then(|r| {
-            let idx = self.idx.as_ref().unwrap();
-            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end())})
-        }))
+        if let Some(r) = reg {
+            
+            let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+                HtsItr::make(unsafe {
+                    sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end())
+                })
+            };
+            
+            let sub_iter = HtsRegionSubIter::make(
+                [r].into_iter(),f,
+            );
+            
+            let it = HtsRegionIter::make(sub_iter, self);
+            
+            Ok(Some(it))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -67,11 +94,11 @@ impl ReadRec for SamReader<'_, '_, '_> {
     type Err = SamError;
     type Rec = BamRec;
 
-    fn read_rec<'a>(&mut self, rec: &'a mut Self::Rec) -> Result<Option<&'a Self::Rec>, Self::Err> {
+    fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err> {
         let (_g, hdr) = self.hdr.get_mut();
 
         match unsafe { sam_read1(self.hts_file.deref_mut(), hdr, rec.as_mut_ptr()) } {
-            0.. => Ok(Some(rec)),
+            0.. => Ok(Some(())),
             -1 => Ok(None), // EOF
             e => Err(SamError::SamReadError(e)),
         }
@@ -79,11 +106,11 @@ impl ReadRec for SamReader<'_, '_, '_> {
 }
 
 impl ReadRecIter for SamReader<'_, '_, '_> {
-    fn read_rec_iter<'a>(
+    fn read_rec_iter(
         &mut self,
         itr: &mut HtsItr,
-        rec: &'a mut Self::Rec,
-    ) -> Result<Option<&'a Self::Rec>, Self::Err> {
+        rec: &mut Self::Rec,
+    ) -> Result<Option<()>, Self::Err> {
         let bgzf = self
             .hts_file
             .bgzf_desc()
@@ -98,10 +125,16 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
                 self.hts_file.deref_mut() as *mut HtsFileRaw as *mut c_void,
             )
         } {
-            0.. => Ok(Some(rec)),
+            0.. => Ok(Some(())),
             -1 => Ok(None),
             e => Err(SamError::SamReadError(e)),
         }
+    }
+}
+
+impl GetIdx for SamReader<'_, '_, '_> {
+    fn get_idx(&self) -> Option<&HtsIdx> {
+        self.idx.as_ref()
     }
 }
 
@@ -137,7 +170,10 @@ mod tests {
 
     use super::*;
 
-    use crate::{region::reg::{Reg, Region}, hts::{HtsFile, traits::IdMap}};
+    use crate::{
+        hts::{HtsFile, traits::IdMap},
+        region::reg::{Reg, Region},
+    };
 
     #[test]
     fn test_read_sam() {
@@ -148,8 +184,8 @@ mod tests {
         let mut reader = SamReader::new(&mut h, &hdr);
 
         let mut n = 0;
-        while let Some(r) = reader.read_rec(&mut rec).unwrap() {
-            eprintln!("{:?}", r.qname());
+        while reader.read_rec(&mut rec).unwrap().is_some() {
+            eprintln!("{:?}", rec.qname());
             n += 1;
         }
 
@@ -164,9 +200,9 @@ mod tests {
         let mut reader = SamReader::new(&mut h, &hdr);
 
         let mut n = 0;
-        while let Some(r) = reader.read_rec(&mut rec).unwrap() {
-            let ctg = r.tid().and_then(|i| reader.seq_name(i));
-            eprintln!("{:?} {:?} {:?}", r.qname(), ctg, r.pos());
+        while reader.read_rec(&mut rec).unwrap().is_some() {
+            let ctg = rec.tid().and_then(|i| reader.seq_name(i));
+            eprintln!("{:?} {:?} {:?}", rec.qname(), ctg, rec.pos());
             n += 1;
         }
 
@@ -186,15 +222,15 @@ mod tests {
         let hreg: HtsRegion = HtsRegion::from(&region);
 
         let mut itr = reader.region_iter(&hreg).unwrap().unwrap();
-        
+
         let mut n = 0;
-        while let Some(r) = reader.read_rec_iter(&mut itr, &mut rec).unwrap() {
-            let ctg = r.tid().and_then(|i| reader.seq_name(i));
-            eprintln!("{:?} {:?} {:?}", r.qname(), ctg, r.pos());
+        
+        while itr.read_rec(&mut rec).unwrap().is_some() {
+            let ctg = rec.tid().and_then(|i| itr.seq_name(i));
+            eprintln!("{:?} {:?} {:?}", rec.qname(), ctg, rec.pos());
             n += 1;
         }
 
         assert_eq!(n, 4);
     }
-
 }

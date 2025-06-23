@@ -1,6 +1,6 @@
-use std::{ffi::CStr, iter::FusedIterator};
+use std::{ffi::CStr, iter::FusedIterator, fmt};
 
-use super::hts_itr::HtsItr;
+use super::{hts_idx::HtsIdx, hts_itr::HtsItr};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HtsHdrType {
@@ -82,15 +82,19 @@ impl<T: IdMap> FusedIterator for SeqIter<'_, T> {}
 
 pub trait ReadRec {
     type Rec;
-    type Err;
+    type Err: fmt::Debug;
 
-    fn read_rec<'a>(&mut self, rec: &'a mut Self::Rec) -> Result<Option<&'a Self::Rec>, Self::Err>;
+    fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
 }
 
 pub trait ReadRecIter: ReadRec {
-    fn read_rec_iter<'a>(
+    fn read_rec_iter(
         &mut self,
         itr: &mut HtsItr,
-        rec: &'a mut Self::Rec,
-    ) -> Result<Option<&'a Self::Rec>, Self::Err>;
+        rec: &mut Self::Rec,
+    ) -> Result<Option<()>, Self::Err>;
+}
+
+pub trait GetIdx {
+    fn get_idx(&self) -> Option<&HtsIdx>;
 }
