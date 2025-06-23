@@ -186,9 +186,8 @@ where
     I: Iterator<Item = HtslibRegion>,
     R: ReadRecIter,
 {
-    pub(crate) fn make(mut iter: HtsRegionSubIter<F, I>, read_rec: R) -> Self {
+    pub(crate) fn make_regions_iter(mut iter: HtsRegionSubIter<F, I>, read_rec: R) -> Self {
         
-        // let mut iter = HtsRegionSubIter::make(reg_iter, |r| (*self.mk_iter)());
         let (sub_iter, current_iter) = if let Some(itr) = iter.next() {
             (Some(iter), Some(itr))
         } else {

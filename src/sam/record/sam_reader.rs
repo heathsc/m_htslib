@@ -10,7 +10,7 @@ use crate::{
     hts::{
         HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion, HtslibRegion,
         hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionSubIter, hts_itr_next},
-        traits::{HdrType, GetIdx, IdMap, ReadRec, ReadRecIter, SeqId},
+        traits::{GetIdx, HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
     },
     sam::{SamHdr, SamHdrRaw},
 };
@@ -46,8 +46,14 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
 }
 
 impl SamReader<'_, '_, '_> {
-    pub fn region_iter
-    (mut self, region: &HtsRegion) -> Result<Option<impl ReadRec<Rec=BamRec, Err=SamError> + IdMap>, SamError> {
+    pub fn region_iter(self, region: &HtsRegion) -> Result<Option<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap>, SamError> {
+        self.regions_iter([region].into_iter())
+    }
+    
+    pub fn regions_iter<'b, 'a: 'b, I: Iterator<Item = &'b HtsRegion<'a>>>(
+        mut self,
+        regions: I,
+    ) -> Result<Option<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap>, SamError> {
         if self.idx.is_none() {
             let hts_raw = self.hts_file.deref_mut();
 
@@ -59,34 +65,27 @@ impl SamReader<'_, '_, '_> {
         }
 
         let idx = self.idx.take().unwrap();
-        
-        let reg = region
-            .make_htslib_region(self.hdr)
-            .map(Some)
-            .or_else(|e| match e {
-                HtsError::UnknownContig(_) => Ok(None),
-                HtsError::InvalidRegion => Err(SamError::InvalidRegion(format!("{:?}", region))),
-                _ => panic!("Unknown error"),
-            })?;
 
-        if let Some(r) = reg {
-            
-            let f = move |r: &HtslibRegion| -> Option<HtsItr> {
-                HtsItr::make(unsafe {
-                    sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end())
-                })
-            };
-            
-            let sub_iter = HtsRegionSubIter::make(
-                [r].into_iter(),f,
-            );
-            
-            let it = HtsRegionIter::make(sub_iter, self);
-            
-            Ok(Some(it))
-        } else {
-            Ok(None)
-        }
+        /* let reg = region
+        .make_htslib_region(self.hdr)
+        .map(Some)
+        .or_else(|e| match e {
+            HtsError::UnknownContig(_) => Ok(None),
+            HtsError::InvalidRegion => Err(SamError::InvalidRegion(format!("{:?}", region))),
+            _ => panic!("Unknown error"),
+        })?; */
+
+        let reg_iter = regions.map(|r| r.make_htslib_region(self.hdr).expect("Invalid region"));
+
+        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
+        };
+
+        let sub_iter = HtsRegionSubIter::make(reg_iter, f);
+
+        let it = HtsRegionIter::make_regions_iter(sub_iter, self);
+
+        Ok(Some(it))
     }
 }
 
@@ -224,7 +223,7 @@ mod tests {
         let mut itr = reader.region_iter(&hreg).unwrap().unwrap();
 
         let mut n = 0;
-        
+
         while itr.read_rec(&mut rec).unwrap().is_some() {
             let ctg = rec.tid().and_then(|i| itr.seq_name(i));
             eprintln!("{:?} {:?} {:?}", rec.qname(), ctg, rec.pos());
@@ -232,5 +231,34 @@ mod tests {
         }
 
         assert_eq!(n, 4);
+    }
+    
+    #[test]
+    fn test_read_cram_multi_iter() {
+        let mut h = HtsFile::open(c"test/test_input_1_a.cram", c"r")
+            .expect("Failed to read test/test_input_1_a.cram");
+        let hdr = SamHdr::read(&mut h).expect("Failed to read header");
+
+        let mut rec = BamRec::new();
+        let mut reader = SamReader::new(&mut h, &hdr);
+        let reg = Reg::from_u8_slice(b"ref1").unwrap();
+        let region1 = Region::from_reg(&reg);
+        let reg = Reg::from_u8_slice(b"ref2:25-").unwrap();
+        let region2 = Region::from_reg(&reg);
+        let hreg1: HtsRegion = HtsRegion::from(&region1);
+        let hreg2: HtsRegion = HtsRegion::from(&region2);
+        let hregs = [hreg1, hreg2];
+
+        let mut itr = reader.regions_iter(hregs.iter()).unwrap().unwrap();
+
+        let mut n = 0;
+
+        while itr.read_rec(&mut rec).unwrap().is_some() {
+            let ctg = rec.tid().and_then(|i| itr.seq_name(i));
+            eprintln!("{:?} {:?} {:?}", rec.qname(), ctg, rec.pos());
+            n += 1;
+        }
+
+        assert_eq!(n, 10);
     }
 }
