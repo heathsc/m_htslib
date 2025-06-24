@@ -1,4 +1,9 @@
-use std::{collections::HashMap, ffi::CString, num::NonZero, sync::Arc};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString},
+    num::NonZero,
+    sync::Arc,
+};
 
 use super::reg::Reg;
 use crate::{
@@ -24,7 +29,7 @@ impl RegionCoords {
             (start, None) => Ok(Self { start, end: None }),
         }
     }
-    
+
     /// Convert RegionCoords into a range given by two HtsPos values,
     /// (x, y) where x is 0-offset, y is 1-offset, and x < y.
     /// if the end coordinate is missing or if it is greater than tseq_len,
@@ -91,6 +96,14 @@ impl RegionCtg {
             Reg::Unmapped => Self::Unmapped,
         }
     }
+
+    pub fn as_cstr(&self) -> Option<&CStr> {
+        if let Self::Contig(s) = self {
+            Some(s.as_c_str())
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Default)]
@@ -106,16 +119,16 @@ impl RegionList {
         Self::default()
     }
 
-    pub fn add<'a, T>(&mut self, s: T) -> Result<(), HtsError> 
-    where 
+    pub fn add<'a, T>(&mut self, s: T) -> Result<(), HtsError>
+    where
         T: TryInto<Reg<'a>>,
-        HtsError: From<<T as TryInto<Reg<'a>>>::Error>
+        HtsError: From<<T as TryInto<Reg<'a>>>::Error>,
     {
         let reg = s.try_into()?;
         self.add_reg(&reg);
         Ok(())
     }
-    
+
     pub fn add_reg(&mut self, reg: &Reg) {
         let region = Region::make(reg, self);
         self.regions.push(region);
@@ -134,6 +147,10 @@ impl RegionList {
 
     pub fn regions(&self) -> RegionIter {
         RegionIter::make(self)
+    }
+
+    pub fn contigs(&self) -> impl Iterator<Item = &CStr> {
+        self.ctg_map.keys().filter_map(|k| k.as_cstr())
     }
 }
 
@@ -179,6 +196,5 @@ mod tests {
         rl.add_reg(&reg);
 
         let r = rl.regions().nth(1).unwrap();
-        
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     int_utils::{parse_decimal, skip_space},
 };
 
-use super::{RegionCoords, traits::*};
+use super::traits::*;
 
 /// Matches when the contig is disambiguated using brackets i.e.., {chr2}
 /// The Regex for the contig name comes from the VCF4.3 spec

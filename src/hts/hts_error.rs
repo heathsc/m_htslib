@@ -1,4 +1,4 @@
-use std::{ffi::CString, num::ParseIntError};
+use std::{ffi::CString, num::ParseIntError, convert::Infallible};
 
 use thiserror::Error;
 
@@ -54,6 +54,8 @@ pub enum HtsError {
     SamError(#[from] SamError),
     #[error("Bgzf Error: {0}")]
     BgzfError(#[from] BgzfError),
+    #[error("Infallible Error: {0}")]
+    InfallibleError(#[from] Infallible),
     #[error("Cram Error: {0}")]
     CramError(#[from] CramError),
     #[error("Cigar Error: {0}")]
