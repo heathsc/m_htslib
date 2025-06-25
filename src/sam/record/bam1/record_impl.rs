@@ -147,6 +147,9 @@ impl BamRec {
     }
 }
 
+unsafe impl Send for BamRec {}
+unsafe impl Sync for BamRec {}
+
 #[inline]
 fn check_tid(i: c_int) -> Option<usize> {
     if i >= 0 { Some(i as usize) } else { None }
