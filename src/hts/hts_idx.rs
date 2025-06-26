@@ -10,6 +10,8 @@ use super::{
     HtsPos,
 };
 
+use crate::gen_utils::CStrWrap;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub enum IdxFmt {
@@ -365,10 +367,10 @@ impl HtsIdx {
     /// current working directory, with the same name as the remote index.
     ///
     /// Equivalent to HtsIdx::load3(fn, [None], fmt, [HTS_IDX_SAVE_REMOTE]);
-    pub fn load(fname: &CStr, fmt: IdxFmt) -> Result<Self, HtsError> {
+    pub fn load<'a, T: Into<CStrWrap<'a>>>(fname: T, fmt: IdxFmt) -> Result<Self, HtsError> {
         fmt.is_regular_fmt().and_then(|_| {
             Self::mk_hts_idx(
-                unsafe { hts_idx_load(fname.as_ptr(), fmt as c_int) },
+                unsafe { hts_idx_load(fname.into().as_ptr(), fmt as c_int) },
                 HtsError::IOError,
             )
         })
@@ -383,9 +385,9 @@ impl HtsIdx {
     /// Equivalent to HtsIdx::load3(fn, Some(fname), [IdxFmt::Csi], 0);
     ///
     /// This function will not attempt to save index files locally.
-    pub fn load2(fname: &CStr, idx_name: &CStr) -> Result<Self, HtsError> {
+    pub fn load2<'a, T: Into<CStrWrap<'a>>>(fname: T, idx_name: &CStr) -> Result<Self, HtsError> {
         Self::mk_hts_idx(
-            unsafe { hts_idx_load2(fname.as_ptr(), idx_name.as_ptr()) },
+            unsafe { hts_idx_load2(fname.into().as_ptr(), idx_name.as_ptr()) },
             HtsError::IOError,
         )
     }
@@ -409,19 +411,23 @@ impl HtsIdx {
     ///   HTS_IDX_SAVE_REMOTE - Save a local copy of any remote indexes
     ///
     ///   HTS_IDX_SILENT_FAIL - Fail silently if the index is not present
-    pub fn load3(
-        fname: &CStr,
-        idx_name: Option<&CStr>,
+    pub fn load3<'a, 'b, S, T>(
+        fname: S,
+        idx_name: Option<T>,
         fmt: IdxFmt,
         flags: c_int,
-    ) -> Result<Self, HtsError> {
+    ) -> Result<Self, HtsError>
+    where 
+        S: Into<CStrWrap<'a>>,
+        T: Into<CStrWrap<'b>>,
+    {
         // If idx_name.is_some() them fmt is ignored, so set it to a valid value
         let fmt = if idx_name.is_some() { IdxFmt::Bai } else { fmt };
 
         fmt.is_regular_fmt().and_then(|_| {
-            let iname = idx_name.map(|s| s.as_ptr()).unwrap_or_else(std::ptr::null);
+            let iname = idx_name.map(|s| s.into().as_ptr()).unwrap_or_else(std::ptr::null);
             Self::mk_hts_idx(
-                unsafe { hts_idx_load3(fname.as_ptr(), iname, fmt as c_int, flags) },
+                unsafe { hts_idx_load3(fname.into().as_ptr(), iname, fmt as c_int, flags) },
                 HtsError::IOError,
             )
         })

@@ -36,6 +36,12 @@ impl CStrWrap<'_> {
     }
 }
 
+impl CStrWrap<'_> {
+    pub fn as_ptr(&self) -> *const libc::c_char {
+        self.inner.as_ref().as_ptr()
+    }
+}
+
 impl<'a> From<&'a CStr> for CStrWrap<'a> {
     fn from(value: &'a CStr) -> Self {
         Self {

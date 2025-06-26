@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{Whence, hts_format::HtsFormat};
-use crate::{cstr_len, error::HtsError, kstring::KString};
+use crate::{cstr_len, error::HtsError, gen_utils::CStrWrap, kstring::KString};
 
 #[repr(C)]
 struct HFileBackend {
@@ -336,8 +336,12 @@ impl HFile {
     /// The usual `fopen(3)` _mode_ letters are supported: one of
     /// `r` (read), `w` (write), `a` (append), optionally followed by any of
     /// `+` (update), `e` (close on `exec(2)`), `x` (create exclusively),
-    pub fn open(name: &CStr, mode: &CStr) -> Result<Self, HtsError> {
-        Self::make_hfile(unsafe { hopen(name.as_ptr(), mode.as_ptr()) })
+    pub fn open<'a, 'b, S, T>(name: S, mode: T) -> Result<Self, HtsError>
+    where 
+        S: Into<CStrWrap<'a>>,
+        T: Into<CStrWrap<'b>>
+    {
+        Self::make_hfile(unsafe { hopen(name.into().as_ptr(), mode.into().as_ptr()) })
     }
 
     /// Associate a stream with an existing open file descriptor
@@ -347,8 +351,11 @@ impl HFile {
     /// between text and binary mode.
     ///
     /// For socket descriptors (on Windows), _mode_ should contain `s`.
-    pub fn dopen(fd: c_int, mode: &CStr) -> Result<Self, HtsError> {
-        Self::make_hfile(unsafe { hdopen(fd, mode.as_ptr()) })
+    pub fn dopen<'a, T>(fd: c_int, mode: T) -> Result<Self, HtsError> 
+    where 
+        T: Into<CStrWrap<'a>>
+    {
+        Self::make_hfile(unsafe { hdopen(fd, mode.into().as_ptr()) })
     }
 
     fn make_hfile(fp: *mut HFileRaw) -> Result<Self, HtsError> {
@@ -370,8 +377,11 @@ impl HFile {
 ///  "Remote" means involving e.g. explicit network access, with the implication
 /// that callers may wish to cache such files' contents locally.
 #[inline]
-pub fn is_remote(name: &CStr) -> bool {
-    unsafe { hisremote(name.as_ptr()) != 0 }
+pub fn is_remote<'a, S>(name: S) -> bool 
+where 
+    S: Into<CStrWrap<'a>>,
+{
+    unsafe { hisremote(name.into().as_ptr()) != 0 }
 }
 
 /// Append an extension or replace an existing extension
@@ -382,16 +392,19 @@ pub fn is_remote(name: &CStr) -> bool {
 ///
 /// If _filename_ is an URL, alters extensions at the end of the `hier-part`,
 /// leaving any trailing `?query` or `#fragment` unchanged.
-pub fn add_extension(
+pub fn add_extension<'a, S>(
     buffer: &mut KString,
-    fname: &CStr,
+    fname: S,
     replace: bool,
     extension: &CStr,
-) -> Result<(), HtsError> {
+) -> Result<(), HtsError>
+where 
+    S: Into<CStrWrap<'a>>,
+{
     if unsafe {
         haddextension(
             buffer,
-            fname.as_ptr(),
+            fname.into().as_ptr(),
             if replace { 1 } else { 0 },
             extension.as_ptr(),
         )

@@ -280,8 +280,12 @@ impl HtsFile<'_> {
     /// \[rw]z  .. compressed VCF
     ///
     /// \[rw]   .. uncompressed VCF
-    pub fn open<'a, T: Into<CStrWrap<'a>>>(name: T, mode: T) -> Result<Self, HtsError> {
-        let fp = unsafe { hts_open(name.into().as_c_str().as_ptr(), mode.into().as_c_str().as_ptr()) };
+    pub fn open<'a, 'b, S, T>(name: S, mode: T) -> Result<Self, HtsError>
+    where 
+        S: Into<CStrWrap<'a>>,
+        T: Into<CStrWrap<'b>>
+    {
+        let fp = unsafe { hts_open(name.into().as_ptr(), mode.into().as_ptr()) };
         Self::mk_hts_file(fp)
     }
 
@@ -302,15 +306,23 @@ impl HtsFile<'_> {
     ///  structures to apply to the open file handle.  These can contain things
     ///  like pointers to the reference or information on compression levels,
     ///  block sizes, etc.
-    pub fn open_format<'a, T: Into<CStrWrap<'a>>>(name: T, mode: T, format: &HtsFormat) -> Result<Self, HtsError> {
-        let fp = unsafe { hts_open_format(name.into().as_c_str().as_ptr(), mode.into().as_c_str().as_ptr(), format) };
+    pub fn open_format<'a, 'b, S, T>(name: S, mode: T, format: &HtsFormat) -> Result<Self, HtsError>
+    where 
+        S: Into<CStrWrap<'a>>,
+        T: Into<CStrWrap<'b>>
+    {
+        let fp = unsafe { hts_open_format(name.into().as_ptr(), mode.into().as_ptr(), format) };
         Self::mk_hts_file(fp)
     }
 
     /// Open an existing stream as an HtsFile
-    pub fn hopen<'a, T: Into<CStrWrap<'a>>>(hfile: HFile, name: T, mode: T) -> Result<Self, HtsError> {
+    pub fn hopen<'a, 'b, S, T>(hfile: HFile, name: T, mode: T) -> Result<Self, HtsError>
+    where 
+        S: Into<CStrWrap<'a>>,
+        T: Into<CStrWrap<'b>>
+    {
         let ptr = hfile.into_raw_ptr();
-        let fp = unsafe { hts_hopen(ptr, name.into().as_c_str().as_ptr(), mode.into().as_c_str().as_ptr()) };
+        let fp = unsafe { hts_hopen(ptr, name.into().as_ptr(), mode.into().as_ptr()) };
         Self::mk_hts_file(fp)
     }
 
