@@ -47,6 +47,7 @@ pub enum HtsRegion<'a> {
     Unmapped,
 }
 
+
 impl HtsRegion<'_> {
     pub fn make_htslib_region<T: IdMap + SeqId>(&self, h: &T) -> Result<HtslibRegion, HtsError> {
         match self {

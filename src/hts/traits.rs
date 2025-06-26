@@ -1,4 +1,4 @@
-use std::{ffi::CStr, fmt, iter::FusedIterator};
+use std::{ffi::CStr, fmt, error, iter::FusedIterator};
 
 use super::hts_itr::HtsItr;
 
@@ -82,7 +82,7 @@ impl<T: IdMap> FusedIterator for SeqIter<'_, T> {}
 
 pub trait ReadRec {
     type Rec;
-    type Err: fmt::Debug;
+    type Err: fmt::Debug + error::Error + Send + Sync + 'static;
 
     fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
 }

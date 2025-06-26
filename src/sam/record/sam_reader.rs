@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     ops::{Deref, DerefMut},
     ptr::null_mut,
 };
@@ -56,13 +57,17 @@ impl SamReader<'_, '_, '_> {
         Ok(HtsRegionIter::make_region_iter(reg, f, self))
     }
     
-    pub fn regions_iter<'b, 'a: 'b, I: Iterator<Item = &'b HtsRegion<'a>>>(
+    pub fn regions_iter<'a, I, T>(
         mut self,
         regions: I,
-    ) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
+    ) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> 
+    where 
+        I: Iterator<Item = T>,
+        T: Borrow<HtsRegion<'a>>,
+    {
         self.load_idx()?;
         let idx = self.idx.take().unwrap();
-        let reg_iter = regions.map(|r| r.make_htslib_region(self.hdr).expect("Invalid region"));
+        let reg_iter = regions.map(|r| r.borrow().make_htslib_region(self.hdr).expect("Invalid region"));
         let f = move |r: &HtslibRegion| -> Option<HtsItr> {
             HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
         };
