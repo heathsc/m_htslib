@@ -2,7 +2,7 @@ use std::{ffi::CString, num::ParseIntError, convert::Infallible};
 
 use thiserror::Error;
 
-use crate::{AuxError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, ParseINumError, SamError};
+use crate::{AuxError, BaseModsError, BgzfError, CigarError, CramError, FaidxError, KHashError, KStringError, ParseINumError, SamError};
 
 #[derive(Error, Debug)]
 pub enum HtsError {
@@ -50,6 +50,8 @@ pub enum HtsError {
     BlankRegion,
     #[error("Aux Error: {0}")]
     AuxError(#[from] AuxError),
+    #[error("Base mods Error: {0}")]
+    BaseModsError(#[from] BaseModsError),
     #[error("Sam Error: {0}")]
     SamError(#[from] SamError),
     #[error("Bgzf Error: {0}")]

@@ -7,5 +7,6 @@ pub use int_utils::ParseINumError;
 pub use khash::khash_error::*;
 pub use kstring::kstring_error::*;
 pub use sam::bam1::aux_error::*;
+pub use sam::base_mods::base_mods_error::*;
 pub use sam::cigar_error::*;
 pub use sam::sam_error::*;

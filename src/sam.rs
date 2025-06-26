@@ -1,4 +1,5 @@
 pub mod bam_data;
+pub mod base_mods;
 pub mod cigar;
 pub mod cigar_buf;
 pub mod cigar_error;
@@ -9,6 +10,7 @@ pub mod sam_hdr;
 pub mod seq_iter;
 
 pub use bam_data::*;
+pub use base_modes::*;
 pub use cigar::*;
 pub use cigar_buf::*;
 pub use record::bam1::aux_iter::*;
