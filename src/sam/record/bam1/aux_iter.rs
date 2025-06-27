@@ -6,6 +6,7 @@ use crate::{AuxError, LeBytes};
 /// This holds the binary data relating to an individual aux tag from a Bam record
 /// The length of the data slice is always at least 3 (2 byte tag + type)
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct BamAuxTag<'a> {
     data: &'a [u8],
 }
@@ -24,14 +25,14 @@ impl fmt::Display for BamAuxTag<'_> {
     }
 }
 
-impl BamAuxTag<'_> {
+impl <'a>BamAuxTag<'a> {
     pub fn id(&self) -> Result<&str, AuxError> {
         let s = std::str::from_utf8(&self.data[..2])?;
         Ok(s)
     }
 
     #[inline]
-    pub fn get_val(&self) -> Result<BamAuxVal, AuxError> {
+    pub fn get_val(&self) -> Result<BamAuxVal<'a>, AuxError> {
         BamAuxVal::from_u8_slice(&self.data[2..])
     }
 

@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 
 use crate::{
-    hts::HtsPos, sam::{bam1::bam1_t, BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter}, SamError
+    hts::HtsPos, sam::{bam1::{bam1_t, BAM_FREVERSE}, BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter}, SamError
 };
 
 use libc::c_int;
@@ -82,6 +82,16 @@ impl BamRec {
         self.inner.core.flag
     }
 
+    #[inline]
+    pub fn is_reversed(&self) -> bool {
+        self.flag() & BAM_FREVERSE != 0
+    }
+    
+    #[inline]
+    pub fn is_mapped(&self) -> bool {
+        self.flag() & BAM_FUNMAP == 0
+    }
+    
     pub fn pos(&self) -> Option<HtsPos> {
         let x = self.inner.core.pos;
         if x >= 0 && (self.inner.core.flag & BAM_FUNMAP) == 0 {
@@ -109,6 +119,10 @@ impl BamRec {
         unsafe { super::make_data_slice(self.inner.data as *const u8, off, sz) }
     }
 
+    pub fn seq_len(&self) -> usize {
+        self.inner.core.l_qseq as usize
+    }
+    
     fn seq_slice(&self) -> &[u8] {
         let core = &self.inner.core;
         let off = ((core.n_cigar as usize) << 2) + core.l_qname as usize;

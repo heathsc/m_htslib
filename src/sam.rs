@@ -10,7 +10,7 @@ pub mod sam_hdr;
 pub mod seq_iter;
 
 pub use bam_data::*;
-pub use base_modes::*;
+pub use base_mods::*;
 pub use cigar::*;
 pub use cigar_buf::*;
 pub use record::bam1::aux_iter::*;

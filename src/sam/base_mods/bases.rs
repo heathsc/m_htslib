@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::base_mods_error::BaseModsError;
+use crate::{int_utils::parse_uint, BaseModsError};
 
 /// Representation of the original (unmodified) base.
 /// The u8 representations are to match the sequence base codes from htslib.  Note that U actually
@@ -21,13 +21,13 @@ pub enum CanonicalBase {
 const CBASE_CHAR: &str = "UAC?G???T??????N";
 
 impl fmt::Display for CanonicalBase {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", CBASE_CHAR.as_bytes()[*self as usize] as char)
     }
 }
 
 impl CanonicalBase {
-    pub fn from_u8(b: u8) -> anyhow::Result<Self> {
+    pub fn from_u8(b: u8) -> Result<Self, BaseModsError> {
         match b {
             b'A' => Ok(Self::A),
             b'C' => Ok(Self::C),
@@ -69,7 +69,7 @@ pub enum ModifiedBase {
 }
 
 impl ModifiedBase {
-    fn parse_ch_ebi(v: &[u8]) -> anyhow::Result<(Self, usize)> {
+    pub(super) fn parse_ch_ebi(v: &[u8]) -> Result<(Self, usize), BaseModsError> {
         let (v1, i) = if let Some((ix, _)) = v.iter().enumerate().find(|(_, c)| !c.is_ascii_digit())
         {
             assert!(ix > 0);
@@ -77,8 +77,8 @@ impl ModifiedBase {
         } else {
             (v, v.len())
         };
-        let chebi = u32_from_u8_slice(v1)
-            .with_context(|| "Malformed MM tag - error parsing ChEBI value")?;
+        let (chebi, _) = parse_uint::<u32>(v1, u32::MAX)?;
+            // .with_context(|| "Malformed MM tag - error parsing ChEBI value")?;
         Ok((Self::ChEBI(chebi), i))
     }
 }

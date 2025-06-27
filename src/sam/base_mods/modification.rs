@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::BaseModsError;
+use super::{CanonicalBase, ModifiedBase};
 
 /// The processed modification code where the base modification code and ChEBI codes are put
 /// together if possible, and the correspondence between the canonical base and the modification
@@ -16,7 +17,7 @@ pub struct Modification {
 }
 
 impl fmt::Display for Modification {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let strand = if self.reverse_strand { '-' } else { '+' };
         if f.alternate() {
             if let Some(b) = self.base_mod_code {
@@ -66,7 +67,7 @@ impl Modification {
         canonical_base: CanonicalBase,
         modified_base: ModifiedBase,
         reverse_strand: bool,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, BaseModsError> {
         match modified_base {
             ModifiedBase::BaseCode(b) => {
                 Self::_new(canonical_base, Some(b), base_to_chebi(b), reverse_strand)
@@ -81,12 +82,16 @@ impl Modification {
         self.base_mod_code
     }
 
+    pub fn canonical_base(&self) -> CanonicalBase {
+        self.canonical_base
+    } 
+    
     fn _new(
         canonical_base: CanonicalBase,
         base_mod_code: Option<u8>,
         chebi_code: Option<u32>,
         reverse_strand: bool,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, BaseModsError> {
         assert!(base_mod_code.is_some() || chebi_code.is_some());
 
         if let Some(b) = base_mod_code {
@@ -129,7 +134,7 @@ impl Modification {
 
     /// Parse modifications in the format found in the MM tag.  The modifications found
     /// are added to the mods vector.
-    fn from_u8_slice(v: &[u8], mods: &mut Vec<Self>) -> anyhow::Result<usize> {
+    pub(super) fn from_u8_slice(v: &[u8], mods: &mut Vec<Self>) -> Result<usize, BaseModsError> {
         if v.len() < 3 {
             return Err(BaseModsError::ShortInput);
         }
@@ -190,5 +195,14 @@ fn base_to_chebi(b: u8) -> Option<u32> {
         b'o' => Some(44605),
         b'n' => Some(18107),
         _ => None,
+    }
+}
+
+/// Returns true if strand is '-' (reverse)
+fn is_reverse_strand(c: u8) -> Result<bool, BaseModsError> {
+    match c {
+        b'+' => Ok(false),
+        b'-' => Ok(true),
+        _ => Err(BaseModsError::MalformedMMTag),
     }
 }

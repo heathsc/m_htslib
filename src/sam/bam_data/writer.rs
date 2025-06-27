@@ -131,7 +131,7 @@ impl BDSeqWriter<'_> {
 
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                ms.putc(Base::from_u8(*c).as_n() << 4)
+                ms.putc(Base::from_u8(*c).as_u8() << 4)
             }
 
             self.inner.set_seq_len(seq.len());

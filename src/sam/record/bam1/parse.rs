@@ -172,7 +172,7 @@ impl BamRec {
 
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                *seq.last_mut().unwrap() = (Base::from_u8(*c).as_n() << 4) as c_char
+                *seq.last_mut().unwrap() = (Base::from_u8(*c).as_u8() << 4) as c_char
             }
         }
         Ok(())
