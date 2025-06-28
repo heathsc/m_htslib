@@ -231,14 +231,14 @@ mod tests {
         assert!(h.insert("key1")?);
 
         for k in &h {
-            eprintln!("{}", k);
+            eprintln!("{k}");
         }
 
         let rf = h.leak();
         let h1 = unsafe { KHashSet::from_raw_ptr(rf) };
 
         for k in h1 {
-            eprintln!("{}", k);
+            eprintln!("{k}");
         }
 
         Ok(())

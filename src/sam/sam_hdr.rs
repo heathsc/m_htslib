@@ -470,7 +470,7 @@ impl SamHdr {
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
     pub (in crate::sam) fn get_mut(&self) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
-        let g = self.inner.write().unwrap();
+        let g = self.inner.write().unwrap();        
         let hdr = unsafe { &mut *(*g.deref()) };
         (g, hdr)
     }
@@ -523,6 +523,8 @@ impl SamHdr {
     pub fn text(&self) -> Option<&CStr> {
         // The htslib function *always* rebuilds the header so we will
         // unconditionally obtain a mutable pointer
+        // 
+    
         self.get_mut().1.text()
     }
 

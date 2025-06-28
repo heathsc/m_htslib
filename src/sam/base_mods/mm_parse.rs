@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-    MlIter, ModIter, ModUnit, ModUnitIterData, ModUnitIterValue, Modification, delta::DeltaItr,
+    MlIter, ModIter, ModUnit, ModUnitIterData, Modification, delta::DeltaItr,
 };
 
 const N_MODS: usize = 4;
@@ -162,7 +162,7 @@ impl MMParse {
                     return Err(BaseModsError::MMSeqMismatch);
                 }
             }
-            self.mk_pos_iter(rec, mm.to_bytes()).map(|i| Some(i))
+            self.mk_pos_iter(rec, mm.to_bytes()).map(Some)
         } else {
             Ok(None)
         }

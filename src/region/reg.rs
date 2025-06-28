@@ -190,9 +190,9 @@ impl fmt::Display for RegContig {
         let s = self.as_str();
 
         if f.alternate() && s.contains(':') {
-            write!(f, "{{{}}}", s)
+            write!(f, "{{{s}}}")
         } else {
-            write!(f, "{}", s)
+            write!(f, "{s}")
         }
     }
 }

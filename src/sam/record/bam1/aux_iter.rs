@@ -219,7 +219,7 @@ impl<T: Sized + LeBytes + BamTypeCode + fmt::Display> fmt::Display for AuxArray<
         let n = std::mem::size_of::<T>();
         for s in self.data.chunks_exact(n) {
             let x: T = get_single_aux_val(s);
-            write!(f, ",{}", x)?
+            write!(f, ",{x}")?
         }
         Ok(())
     }
@@ -322,8 +322,8 @@ impl fmt::Display for BamAuxVal<'_> {
             Self::String(s) => write!(f, "Z:{}", s.to_str().unwrap())?,
             Self::HexString(hs) => write!(f, "H:{hs}")?,
             Self::CharArray(s) => write!(f, "B:A:{}", std::str::from_utf8(s).unwrap())?,
-            Self::Float32Array(a) => write!(f, "B:{}", a)?,
-            Self::Float64Array(a) => write!(f, "B:{}", a)?,
+            Self::Float32Array(a) => write!(f, "B:{a}")?,
+            Self::Float64Array(a) => write!(f, "B:{a}")?,
             Self::IntArray(a) => a.fmt(f)?,
         }
 

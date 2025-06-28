@@ -61,7 +61,7 @@ struct bam1_core_t {
 
 #[repr(C)]
 #[derive(Debug)]
-pub(super) struct bam1_t {
+pub(crate) struct bam1_t {
     core: bam1_core_t,
     id: u64,
     data: *mut c_char,

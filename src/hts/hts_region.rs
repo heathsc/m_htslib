@@ -157,7 +157,7 @@ mod tests {
         };
         let hreg = HtsRegion::Contig(reg);
         let hr = hreg.make_htslib_region(&hdr).unwrap();
-        eprintln!("{:?}", hr);
+        eprintln!("{hr:?}");
         assert_eq!(hr.end, 200);
         assert_eq!(hr.start, 24);
 
@@ -167,7 +167,7 @@ mod tests {
         };
         let hreg = HtsRegion::Contig(reg);
         let hr = hreg.make_htslib_region(&hdr).unwrap();
-        eprintln!("{:?}", hr);
+        eprintln!("{hr:?}");
         assert_eq!(hr.end, 686);
 
         let reg = HtsCtgRegion {
@@ -176,7 +176,7 @@ mod tests {
         };
         let hreg = HtsRegion::Contig(reg);
         let hr = hreg.make_htslib_region(&hdr).unwrap();
-        eprintln!("{:?}", hr);
+        eprintln!("{hr:?}");
         assert_eq!(hr.end, 686)
     }
     
@@ -190,7 +190,7 @@ mod tests {
         let hreg: HtsRegion = HtsRegion::from(&region);
         let hr = hreg.make_htslib_region(&hdr).unwrap();
         
-        eprintln!("{:?}", hr);
+        eprintln!("{hr:?}");
         assert_eq!(hr.end, 200);
         assert_eq!(hr.start, 24);
     }

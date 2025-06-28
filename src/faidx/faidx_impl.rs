@@ -69,7 +69,7 @@ impl FaidxRaw {
     }
     fn iseq(&self, i: usize) -> Option<&CStr> {
         if i > self.nseq() {
-            panic!("Sequence ID {} out of range", i);
+            panic!("Sequence ID {i} out of range");
         }
         from_c(unsafe { faidx_iseq(self, i as libc::c_int) })
     }

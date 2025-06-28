@@ -744,7 +744,7 @@ mod tests {
         assert_eq!(h.insert(1, Test::new("string7"))?, None);
 
         for (k, v) in &mut h {
-            eprintln!("{} {:?}", k, v)
+            eprintln!("{k} {v:?}")
         }
 
         Ok(())
