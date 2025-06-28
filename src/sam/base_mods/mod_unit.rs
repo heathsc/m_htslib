@@ -178,9 +178,58 @@ fn count_delta_entries(v: &[u8]) -> Result<(usize, usize, usize, usize), BaseMod
         n_delta += 1;
         total_seq = total_seq
             .checked_add(delta + 1)
-            .ok_or_else(|| BaseModsError::BaseCountOverflow)?;
+            .ok_or(BaseModsError::BaseCountOverflow)?;
         ix += ix1[0];
     }
 
     Ok((n_delta, total_seq, first_delta, ret))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_delta_entries() -> Result<(), BaseModsError> {
+        assert_eq!(
+            count_delta_entries(",32,5,19,2,213".as_bytes())?,
+            (5, 276, 32, 3)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_count_delta_entries_2() -> Result<(), BaseModsError> {
+        assert_eq!(count_delta_entries(",32".as_bytes())?, (1, 33, 32, 3));
+        Ok(())
+    }
+    
+    #[test]
+    fn test_parse_modifications() -> Result<(), BaseModsError> {
+        let mut mod_unit1 = ModUnit::new();
+        let base_counts = [0, 0, 180, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        mod_unit1.parse_modifications_from_u8_slice(
+            "C+mh?,4,10,154".as_bytes(),
+            &base_counts,
+            false,
+        )?;
+        assert_eq!(mod_unit1.mods().len(), 2);
+        let mut mod_unit2 = ModUnit::new();
+        mod_unit2.parse_modifications_from_u8_slice(
+            "C+76792?,2,2,9".as_bytes(),
+            &base_counts,
+            false,
+        )?;
+        assert_eq!(mod_unit2.mods().len(), 1);
+        assert_eq!(mod_unit1.mods()[1], mod_unit2.mods()[0]);
+        let s = format!("{}", mod_unit1.mods()[1]);
+        assert_eq!(s.as_str(), "C+h");
+        let s = format!("{:#}", mod_unit1.mods()[1]);
+        assert_eq!(s.as_str(), "5hmC+");
+        let mdata = mod_unit1.data().unwrap();
+        assert_eq!(mdata.n_delta(), 3);
+        assert!(!mdata.implicit());
+        assert_eq!(mdata.mm_data_range(), &(7..14));
+        Ok(())
+    }
 }

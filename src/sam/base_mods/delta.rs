@@ -117,3 +117,53 @@ fn parse_mm_count_rev(v: &[u8]) -> Result<(usize, [usize; 2]), BaseModsError> {
         Ok((x, [0, i]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_count_fwd() -> Result<(), BaseModsError> {
+        let v = ",32,452".as_bytes();
+        let (x, ix) = parse_mm_count_fwd(v)?;
+        assert_eq!(x, 32);
+        assert_eq!(ix[0], 3);
+        let (x, ix) = parse_mm_count_fwd(&v[ix[0]..ix[1]])?;
+        assert_eq!(x, 452);
+        assert_eq!(ix[0], 4);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_count_rev() -> Result<(), BaseModsError> {
+        let v = ",324,45".as_bytes();
+        let (x, ix) = parse_mm_count_rev(v)?;
+        assert_eq!(x, 45);
+        let v = &v[ix[0]..ix[1]];
+        assert_eq!(v, ",324".as_bytes());
+        let (x, ix1) = parse_mm_count_rev(v)?;
+        assert_eq!(x, 324);
+        assert_eq!(ix1[1], 0);
+        Ok(())
+    }
+    
+    #[test]
+    fn test_parse_itr_fwd() {
+        let mut itr = DeltaItr::new(",32,712,1234".as_bytes(), 4, 16, false);
+        assert_eq!(itr.next(), Some(16));
+        assert_eq!(itr.next(), Some(32));
+        assert_eq!(itr.next(), Some(712));
+        assert_eq!(itr.next(), Some(1234));
+        assert_eq!(itr.next(), None);
+    }
+
+    #[test]
+    fn test_parse_itr_rev() {
+        let mut itr = DeltaItr::new(",16,32,712".as_bytes(), 4, 1234, true);
+        assert_eq!(itr.next(), Some(1234));
+        assert_eq!(itr.next(), Some(712));
+        assert_eq!(itr.next(), Some(32));
+        assert_eq!(itr.next(), Some(16));
+        assert_eq!(itr.next(), None);
+    }    
+}

@@ -40,7 +40,7 @@ impl fmt::Display for Modification {
                     b'N' => Some("?N"),
                     _ => None,
                 } {
-                    write!(f, "{}", s)?
+                    write!(f, "{s}")?
                 } else {
                     write!(f, "[{}]{}", b as char, self.canonical_base)?
                 }
@@ -48,7 +48,7 @@ impl fmt::Display for Modification {
                 let x = self.chebi_code.expect("Missing ChEBI code");
                 write!(f, "({}){}", x, self.canonical_base)?
             }
-            write!(f, "{}", strand)
+            write!(f, "{strand}")
         } else {
             write!(f, "{}{}", self.canonical_base, strand)?;
             if let Some(b) = self.base_mod_code {
@@ -204,5 +204,25 @@ fn is_reverse_strand(c: u8) -> Result<bool, BaseModsError> {
         b'+' => Ok(false),
         b'-' => Ok(true),
         _ => Err(BaseModsError::MalformedMMTag),
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_modifications() -> Result<(), BaseModsError> {
+        let mut mods = Vec::new();
+        let ix = Modification::from_u8_slice("C+mh".as_bytes(), &mut mods)?;
+        assert_eq!(ix, 4);
+        let s = format!("{}", mods[1]);
+        assert_eq!(s.as_str(), "C+h");
+        mods.clear();
+        let _ = Modification::from_u8_slice("G-m".as_bytes(), &mut mods)?;
+        let s = format!("{}", mods[0]);
+        assert_eq!(s.as_str(), "G-m");
+        Ok(())
     }
 }
