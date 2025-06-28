@@ -94,9 +94,9 @@ impl ReadRec for SamReader<'_, '_, '_> {
     type Rec = BamRec;
 
     fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err> {
-        let (_g, hdr) = self.hdr.get_mut();
+        let mut g = self.hdr.write_guard();
 
-        match unsafe { sam_read1(self.hts_file.deref_mut(), hdr, rec.as_mut_ptr()) } {
+        match unsafe { sam_read1(self.hts_file.deref_mut(), g.as_ptr_mut(), rec.as_mut_ptr()) } {
             0.. => Ok(Some(())),
             -1 => Ok(None), // EOF
             e => Err(SamError::SamReadError(e)),

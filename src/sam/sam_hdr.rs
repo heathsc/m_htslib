@@ -279,16 +279,6 @@ impl SamHdrRaw {
         i < self.nref()
     }
 
-    /// Gets the name of the sequence corresponding to a target index
-    #[inline]
-    fn tid2name(&self, i: usize) -> Option<&CStr> {
-        if self.check_idx(i) {
-            from_c(unsafe { sam_hdr_tid2name(self, i as c_int) })
-        } else {
-            None
-        }
-    }
-
     /// Gets the length of the sequence corresponding to a target index
     fn tid2len(&self, i: usize) -> Option<usize> {
         if self.check_idx(i) {
@@ -327,12 +317,6 @@ impl SamHdrRaw {
             let p = self as *const SamHdrRaw as *mut SamHdrRaw;
             Self::check_tid(unsafe { sam_hdr_name2tid(p, cname.as_ptr()) })
         }
-    }
-
-    /// Returns the current header txt.  Can be invalidated by a call to another header function
-    #[inline]
-    fn text(&mut self) -> Option<&CStr> {
-        from_c(unsafe { sam_hdr_str(self) })
     }
 
     /// Returns length of header text
@@ -448,31 +432,19 @@ impl SamHdr {
     /// Get a shared reference from inner. We return a read guard along with the
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
-    fn get_ref(&self) -> (RwLockReadGuard<*mut SamHdrRaw>, &SamHdrRaw) {
-        let g = self.inner.read().unwrap();
-        let hdr = unsafe { &*(*g.deref()) };
-        (g, hdr)
-    }
-
-    /// Release a read lock and obtain a write lock, allowing the generation of a
-    /// mutable reference from inner. We return a write guard along with the
-    /// reference so that the guard remains in scope and the reference stays valid
-    #[inline]
-    fn drop_and_get_mut(
-        &self,
-        g: RwLockReadGuard<*mut SamHdrRaw>,
-    ) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
-        drop(g);
-        self.get_mut()
+    fn read_guard(&self) -> SamHdrReadGuard {
+        SamHdrReadGuard {
+            inner: self.inner.read().unwrap(),
+        }
     }
 
     /// Get a mutable reference from inner. We return a writeguard along with the
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
-    pub (in crate::sam) fn get_mut(&self) -> (RwLockWriteGuard<*mut SamHdrRaw>, &mut SamHdrRaw) {
-        let g = self.inner.write().unwrap();        
-        let hdr = unsafe { &mut *(*g.deref()) };
-        (g, hdr)
+    pub(in crate::sam) fn write_guard(&self) -> SamHdrWriteGuard {
+        SamHdrWriteGuard {
+            inner: self.inner.write().unwrap(),
+        }
     }
 
     /// Get a *mut pointer from inner. As we have a mut reference for self,
@@ -486,35 +458,42 @@ impl SamHdr {
     /// Writes the header to `hts_file`
     #[inline]
     pub fn write(&self, hts_file: &mut HtsFileRaw) -> Result<(), SamError> {
-        self.get_ref().1.write(hts_file)
+        self.read_guard().write(hts_file)
     }
 
     /// Returns the number of references in sam header
     #[inline]
     pub fn nref(&self) -> usize {
-        self.get_ref().1.nref()
+        self.read_guard().nref()
     }
 
     /// Gets the name of the sequence corresponding to a target index
     #[inline]
     pub fn tid2name(&self, i: usize) -> Option<&CStr> {
-        self.get_ref().1.tid2name(i)
+        let g = self.read_guard();
+        if g.check_idx(i) {
+            from_c(unsafe { sam_hdr_tid2name(g.as_ptr(), i as c_int) })
+        } else {
+            None
+        }
     }
 
     /// Gets the length of the sequence corresponding to a target index
     #[inline]
     pub fn tid2len(&self, i: usize) -> Option<usize> {
-        self.get_ref().1.tid2len(i)
+        self.read_guard().tid2len(i)
     }
 
     /// Get internal ID corresponding to a sequence name
     #[inline]
     pub fn name2tid(&self, cname: &CStr) -> Result<usize, SamError> {
-        let (g, hdr) = self.get_ref();
-        if hdr.hrecs.is_null() {
-            self.drop_and_get_mut(g).1.name2tid_rebuild(cname)
+        let g = self.read_guard();
+        if g.hrecs.is_null() {
+            drop(g);
+            let mut g = self.write_guard();
+            g.name2tid_rebuild(cname)
         } else {
-            hdr.name2tid(cname)
+            g.name2tid(cname)
         }
     }
 
@@ -523,9 +502,9 @@ impl SamHdr {
     pub fn text(&self) -> Option<&CStr> {
         // The htslib function *always* rebuilds the header so we will
         // unconditionally obtain a mutable pointer
-        // 
-    
-        self.get_mut().1.text()
+
+        let mut g = self.write_guard();
+        from_c(unsafe { sam_hdr_str(g.as_ptr_mut()) })
     }
 
     /// Returns length of header text
@@ -533,7 +512,7 @@ impl SamHdr {
     pub fn length(&self) -> Result<usize, SamError> {
         // The htslib function *always* rebuilds the header so we will
         // unconditionally obtain a mutable pointer
-        self.get_mut().1.length()
+        self.write_guard().length()
     }
 
     /// Add SAM header record(s) with optional new line.  If multiple lines are present (separated by newlines)
@@ -599,7 +578,7 @@ impl SamHdr {
         let mut ks = KString::new();
         if unsafe {
             sam_hdr_find_line_id(
-                self.get_mut().1,
+                self.write_guard().as_ptr_mut(),
                 typ.as_ptr(),
                 id_key.as_ptr(),
                 id_val.as_ptr(),
@@ -615,7 +594,12 @@ impl SamHdr {
     pub fn find_line_pos(&self, typ: &CStr, pos: usize) -> Option<KString> {
         let mut ks = KString::new();
         if unsafe {
-            sam_hdr_find_line_pos(self.get_mut().1, typ.as_ptr(), pos as c_int, &mut ks) == 0
+            sam_hdr_find_line_pos(
+                self.write_guard().as_ptr_mut(),
+                typ.as_ptr(),
+                pos as c_int,
+                &mut ks,
+            ) == 0
         } {
             Some(ks)
         } else {
@@ -661,7 +645,7 @@ impl SamHdr {
         let mut ks = KString::new();
         if unsafe {
             sam_hdr_find_tag_id(
-                self.get_mut().1,
+                self.write_guard().as_ptr_mut(),
                 typ.as_ptr(),
                 id_key.as_ptr(),
                 id_val.as_ptr(),
@@ -679,7 +663,7 @@ impl SamHdr {
         let mut ks = KString::new();
         if unsafe {
             sam_hdr_find_tag_pos(
-                self.get_mut().1,
+                self.write_guard().as_ptr_mut(),
                 typ.as_ptr(),
                 pos as c_int,
                 key.as_ptr(),
@@ -693,8 +677,51 @@ impl SamHdr {
     }
 
     pub fn count_lines(&self, typ: &CStr) -> Option<usize> {
-        let n = unsafe { sam_hdr_count_lines(self.get_mut().1, typ.as_ptr()) };
+        let n = unsafe { sam_hdr_count_lines(self.write_guard().as_ptr_mut(), typ.as_ptr()) };
         if n >= 0 { Some(n as usize) } else { None }
+    }
+}
+
+struct SamHdrReadGuard<'a> {
+    inner: RwLockReadGuard<'a, *mut SamHdrRaw>,
+}
+
+impl Deref for SamHdrReadGuard<'_> {
+    type Target = SamHdrRaw;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(*self.inner.deref()) }
+    }
+}
+
+impl SamHdrReadGuard<'_> {
+    fn as_ptr(&self) -> *const SamHdrRaw {
+        *self.inner.deref()
+    }
+}
+
+
+pub(in crate::sam) struct SamHdrWriteGuard<'a> {
+    inner: RwLockWriteGuard<'a, *mut SamHdrRaw>,
+}
+
+impl SamHdrWriteGuard<'_> {
+    pub(in crate::sam) fn as_ptr_mut(&mut self) -> *mut SamHdrRaw {
+        *self.inner.deref()
+    }
+}
+
+impl Deref for SamHdrWriteGuard<'_> {
+    type Target = SamHdrRaw;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(*self.inner.deref()) }
+    }
+}
+
+impl DerefMut for SamHdrWriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *(*self.inner.deref()) }
     }
 }
 
