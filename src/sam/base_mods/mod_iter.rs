@@ -5,10 +5,10 @@ use super::{ModUnit, Modification, delta::DeltaItr};
 pub(super) type MlIter<'a> = Box<dyn Iterator<Item = &'a [u8]> + 'a>;
 pub(super) type MdIter<'a> = std::iter::Zip<DeltaItr<'a>, MlIter<'a>>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ModIterItem<'a> {
     seq_base: Base,
-    data: &'a Vec<(u8, Modification)>,
+    data: &'a Vec<Modification>,
 }
 
 impl<'a> ModIterItem<'a> {
@@ -16,7 +16,7 @@ impl<'a> ModIterItem<'a> {
         self.seq_base
     }
 
-    pub fn data(&self) -> &[(u8, Modification)] {
+    pub fn data(&self) -> &[Modification] {
         self.data
     }
 }
@@ -58,7 +58,7 @@ impl<'a, 'b> ModUnitIterData<'a, 'b> {
 /// Note that 'a from MMParse, 'b from BamRec as data_vec and select are references to data held
 /// in an MMParse struct while seq_iter is an iterator over the bases in the read.
 pub struct ModIter<'a, 'b> {
-    data_vec: &'a mut Vec<(u8, Modification)>,
+    data_vec: &'a mut Vec<Modification>,
     select: &'a [(usize, usize)],
     unit_iters: Vec<ModUnitIterData<'a, 'b>>,
     seq_iter: SeqIter<'b>,
@@ -68,7 +68,7 @@ pub struct ModIter<'a, 'b> {
 
 impl<'a, 'b> ModIter<'a, 'b> {
     pub(super) fn make(
-        data_vec: &'a mut Vec<(u8, Modification)>,
+        data_vec: &'a mut Vec<Modification>,
         select: &'a [(usize, usize)],
         unit_iters: Vec<ModUnitIterData<'a, 'b>>,
         seq_iter: SeqIter<'b>,
@@ -135,9 +135,15 @@ impl<'a, 'b> ModIter<'a, 'b> {
                 // mods at this site.
                 match unit.current_value {
                     ModUnitIterValue::Explicit(p) => {
-                        self.data_vec.push((p[*j], unit.mod_unit.mods()[*j]))
+                        let mut m = unit.mod_unit.mods()[*j];
+                        m.set_ml_value(p[*j]);
+                        self.data_vec.push(m)
                     }
-                    ModUnitIterValue::Implicit => self.data_vec.push((0, unit.mod_unit.mods()[*j])),
+                    ModUnitIterValue::Implicit => {
+                        let mut m = unit.mod_unit.mods()[*j];
+                        m.set_implicit_ml_value();
+                        self.data_vec.push(m)
+                    }
                     ModUnitIterValue::Missing => {}
                 }
             }

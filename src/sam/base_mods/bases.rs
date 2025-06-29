@@ -39,7 +39,33 @@ impl CanonicalBase {
         }
     }
 
-    /// This translation is to match with the sequence base codes from htslib.  Note that we map
+    /// Creates a CanonicalBase directly from the underlying u8
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe if a u8 is used that does not correspond to a canonical base (i.e., 9).
+    /// It is instead recommended to use [Self::from_raw] that ensures that only valid values are used
+    #[inline]
+    pub unsafe fn from_raw_unchecked(x: u8) -> Self {
+        unsafe { std::mem::transmute::<u8, Self>(x) }
+    }
+    
+    const VALID_REPR: [bool; 16] = [true, true, true, false, true, false, false, false, true, false, false, false, false, false, false, true];
+    
+    pub fn from_raw(x: u8) -> Result<Self, BaseModsError> {
+        if Self::VALID_REPR.get(x as usize).copied().unwrap_or(false) {
+            Ok(unsafe { Self::from_raw_unchecked(x)} )
+        } else {
+            Err(BaseModsError::IllegalCanonicalBaseRepr(x))
+        }
+    }
+    
+    #[inline]
+    pub fn to_raw(&self) -> u8 {
+        *self as u8
+    }
+    
+    /// This translation is to match with the sequence base codes from htslib. Note that we map
     /// U to T for the purpose of matching to the sequence
     pub fn as_u8(&self) -> u8 {
         match self {
@@ -80,5 +106,20 @@ impl ModifiedBase {
         let (chebi, _) = parse_uint::<u32>(v1, u32::MAX)?;
             // .with_context(|| "Malformed MM tag - error parsing ChEBI value")?;
         Ok((Self::ChEBI(chebi), i))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_canonical()-> Result<(), BaseModsError> {
+        let cb = CanonicalBase::from_u8(b'C')?;
+        let x = cb.to_raw();
+        assert_eq!(x, 2);
+        let cb1 = CanonicalBase::from_raw(x)?;
+        assert_eq!(cb, cb1);
+        Ok(())
     }
 }

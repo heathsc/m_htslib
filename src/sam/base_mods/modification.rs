@@ -1,26 +1,36 @@
 use std::fmt;
 
-use crate::BaseModsError;
 use super::{CanonicalBase, ModifiedBase};
+use crate::BaseModsError;
 
 /// The processed modification code where the base modification code and ChEBI codes are put
 /// together if possible, and the correspondence between the canonical base and the modification
 /// is checked if known (i.e., ModifiedBase::ChEBI(27551) and ModifiedBase::BaseCode(b'm') will
 /// both be translated to the same type of Modification, and a check will be made that the
 /// canonical base is C as this is the code for 5mC.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Modification {
-    canonical_base: CanonicalBase,
-    reverse_strand: bool,
-    base_mod_code: Option<u8>,
-    chebi_code: Option<u32>,
+    // We pack everything into a u64 to have a more efficient storage
+    //
+    // bits 0..7 - MF flags (see below)
+    // bits 8..39 - ChEBI code if known
+    // bits 40..47 - base_mod_code if known
+    // bits 48..55 - CanonicalBase
+    // bits 56..63 - mod likelihood score (0-255)
+    inner: u64,
 }
+
+const MF_REVERSE_STRAND: u8 = 1;
+const MF_MOD_CODE_PRESENT: u8 = 2;
+const MF_CHEBI_PRESENT: u8 = 4;
+const MF_ML_PRESENT: u8 = 8;
+const MF_ML_EXPLICIT: u8 = 16;
 
 impl fmt::Display for Modification {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let strand = if self.reverse_strand { '-' } else { '+' };
+        let strand = if self.reverse_strand() { '-' } else { '+' };
         if f.alternate() {
-            if let Some(b) = self.base_mod_code {
+            if let Some(b) = self.base_mod_code() {
                 if let Some(s) = match b {
                     b'm' => Some("5mC"),
                     b'h' => Some("5hmC"),
@@ -42,21 +52,33 @@ impl fmt::Display for Modification {
                 } {
                     write!(f, "{s}")?
                 } else {
-                    write!(f, "[{}]{}", b as char, self.canonical_base)?
+                    write!(f, "[{}]{}", b as char, self.canonical_base())?
                 }
             } else {
-                let x = self.chebi_code.expect("Missing ChEBI code");
-                write!(f, "({}){}", x, self.canonical_base)?
+                let x = self.chebi_code().expect("Missing ChEBI code");
+                write!(f, "({}){}", x, self.canonical_base())?
             }
             write!(f, "{strand}")
         } else {
-            write!(f, "{}{}", self.canonical_base, strand)?;
-            if let Some(b) = self.base_mod_code {
+            write!(f, "{}{}", self.canonical_base(), strand)?;
+            if let Some(b) = self.base_mod_code() {
                 write!(f, "{}", b as char)
             } else {
-                write!(f, "{}", self.chebi_code.expect("Missing ChEBI code"))
+                write!(f, "{}", self.chebi_code().expect("Missing ChEBI code"))
             }
         }
+    }
+}
+
+impl fmt::Debug for Modification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Modification {{ ")?;
+        write!(f, "canonical base: {:?}", self.canonical_base())?;
+        write!(f, ", flags: 0x{:02x}", self.flags())?;
+        write!(f, ", base_mod_code: {:?}", self.base_mod_code())?;
+        write!(f, ", chebi_code: {:?}", self.chebi_code())?;
+        write!(f, ", ml_value: {:?}", self.ml_value())?;
+        write!(f, " }}")
     }
 }
 
@@ -78,14 +100,47 @@ impl Modification {
         }
     }
 
-    pub fn base_mod_code(&self) -> Option<u8> {
-        self.base_mod_code
+    #[inline]
+    pub fn flags(&self) -> u8 {
+        (self.inner & 0xff) as u8
     }
 
-    pub fn canonical_base(&self) -> CanonicalBase {
-        self.canonical_base
-    } 
+    pub fn base_mod_code(&self) -> Option<u8> {
+        if self.flags() & MF_MOD_CODE_PRESENT == 0 {
+            None
+        } else {
+            Some(((self.inner >> 40) & 0xff) as u8)
+        }
+    }
+
+    pub fn chebi_code(&self) -> Option<u32> {
+        if self.flags() & MF_CHEBI_PRESENT == 0 {
+            None
+        } else {
+            Some(((self.inner >> 8) & 0xffffffff) as u32)
+        }
+    }
+
+    pub fn ml_value(&self) -> Option<u8> {
+        if self.flags() & MF_ML_PRESENT == 0 {
+            None
+        } else {
+            Some((self.inner >> 56) as u8)
+        }
+    }
+
+    pub fn set_ml_value(&mut self, x: u8) {
+        self.inner = (self.inner & 0x00ffffffffffffff) | (x as u64) << 56 | (MF_ML_EXPLICIT | MF_ML_PRESENT) as u64;
+    }
     
+    pub fn set_implicit_ml_value(&mut self) {
+        self.inner = (self.inner & 0x00ffffffffffffdf) | MF_ML_PRESENT as u64;
+    }
+    
+    pub fn canonical_base(&self) -> CanonicalBase {
+        unsafe { CanonicalBase::from_raw_unchecked(((self.inner >> 48) & 0xff) as u8) }
+    }
+
     fn _new(
         canonical_base: CanonicalBase,
         base_mod_code: Option<u8>,
@@ -105,31 +160,41 @@ impl Modification {
                     b'n' | b'N' => CanonicalBase::N,
                     _ => return Err(BaseModsError::UnknownModCode(b as char)),
                 };
-                if reverse_strand {
-                    cb.complement()
-                } else {
-                    cb
-                }
+                if reverse_strand { cb.complement() } else { cb }
             };
 
             if c != canonical_base {
                 return Err(BaseModsError::ModifierMismatch(
                     canonical_base,
                     if reverse_strand { '-' } else { '+' },
-                    b as char
+                    b as char,
                 ));
             }
         }
-        Ok(Self {
-            canonical_base,
-            reverse_strand,
-            base_mod_code,
-            chebi_code,
-        })
+        let flags = if reverse_strand { MF_REVERSE_STRAND } else { 0 };
+
+        let (flags, base_mod) = if let Some(x) = base_mod_code {
+            (flags | MF_MOD_CODE_PRESENT, x)
+        } else {
+            (flags, 0)
+        };
+
+        let (flags, chebi) = if let Some(x) = chebi_code {
+            (flags | MF_CHEBI_PRESENT, x)
+        } else {
+            (flags, 0)
+        };
+
+        let inner = flags as u64
+            | (chebi as u64) << 8
+            | (base_mod as u64) << 40
+            | (canonical_base.to_raw() as u64) << 48;
+
+        Ok(Self { inner })
     }
 
     pub fn reverse_strand(&self) -> bool {
-        self.reverse_strand
+        self.flags() & MF_REVERSE_STRAND != 0
     }
 
     /// Parse modifications in the format found in the MM tag.  The modifications found
@@ -206,7 +271,6 @@ fn is_reverse_strand(c: u8) -> Result<bool, BaseModsError> {
         _ => Err(BaseModsError::MalformedMMTag),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

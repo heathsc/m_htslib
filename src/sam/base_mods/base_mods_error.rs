@@ -8,6 +8,8 @@ use super::CanonicalBase;
 pub enum BaseModsError {
     #[error("Illegal canonical base: {0}")]
     IllegalCanonicalBase(u8),
+    #[error("Illegal canonical base representation: {0}")]
+    IllegalCanonicalBaseRepr(u8),
     #[error("Bad modifier base: {0}")]
     BadModifierBase(u8),
     #[error("Modification input too short")]

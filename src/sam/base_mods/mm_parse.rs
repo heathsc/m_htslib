@@ -29,12 +29,17 @@ pub struct MMParse {
     // (i, j) where the selected mod is self.mod_units[i].mods[j]
     current_select: Vec<(usize, usize)>,
 
-    data_vec: Vec<(u8, Modification)>,
+    data_vec: Vec<Modification>,
 
     ml_data: Vec<u8>,
 }
 
 impl MMParse {
+    
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
     fn new_unit(&mut self) -> &mut ModUnit {
         if self.n_units == self.mod_units.len() {
             self.mod_units.push(Default::default())

@@ -21,6 +21,7 @@ pub use hts_region::*;
 pub use hts_opt::*;
 pub use hts_thread_pool::*;
 pub use htsfile::*;
+pub use traits::*;
 
 use hts_error::HtsError;
 use hts_ocstr::OCStr;
