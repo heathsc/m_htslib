@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 use crate::{base::Base, sam::SeqIter};
 
 use super::{ModUnit, Modification, delta::DeltaItr};
@@ -60,7 +62,7 @@ impl<'a, 'b> ModUnitIterData<'a, 'b> {
 pub struct ModIter<'a, 'b> {
     data_vec: &'a mut Vec<Modification>,
     select: &'a [(usize, usize)],
-    unit_iters: Vec<ModUnitIterData<'a, 'b>>,
+    unit_iters: ManuallyDrop<Vec<ModUnitIterData<'a, 'b>>>,
     seq_iter: SeqIter<'b>,
     finished: bool,
     reversed: bool,
@@ -70,7 +72,7 @@ impl<'a, 'b> ModIter<'a, 'b> {
     pub(super) fn make(
         data_vec: &'a mut Vec<Modification>,
         select: &'a [(usize, usize)],
-        unit_iters: Vec<ModUnitIterData<'a, 'b>>,
+        unit_iters: ManuallyDrop<Vec<ModUnitIterData<'a, 'b>>>,
         seq_iter: SeqIter<'b>,
         reversed: bool,
     ) -> Self {

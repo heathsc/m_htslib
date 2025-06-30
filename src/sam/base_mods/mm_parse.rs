@@ -1,4 +1,4 @@
-use std::{ffi::CStr, ops::Range};
+use std::{ffi::CStr, mem::ManuallyDrop, ops::Range};
 
 use smallvec::SmallVec;
 
@@ -7,11 +7,49 @@ use crate::{
     sam::{BamAuxTagType, BamAuxVal, BamRec},
 };
 
-use super::{
-    MlIter, ModIter, ModUnit, ModUnitIterData, Modification, delta::DeltaItr,
-};
+use super::{MlIter, ModIter, ModUnit, ModUnitIterData, Modification, delta::DeltaItr};
 
 const N_MODS: usize = 4;
+
+/// This is an ugly hack - I agree...
+/// 
+/// We want to have a persistent storage for a Vec<ModUnitIterData<'a, 'b>> so
+/// that we can use it for subsequent calls to generate an iterator, avoiding the
+/// need to allocate a new Vec each time. THe problem is that if we include it in
+/// MMParse struct itself, 'a refers to the lifetime of the MMParse struct itself,
+/// and 'b refers to the BamRec we are working on. This makes it almost impossible to
+/// use, but this is not necessary because we only use the storage while the generated
+/// iterator is in scope. For the next parse, the vector will be reset to empty, but
+/// the compiler does not know that so we end up with the lifetimes of MMParse, the
+/// BamRec and the iterator all linked together.
+/// 
+/// To avoid this, we take advantage of the fact that we can create a Vec<ModUnitIterData>
+/// with a given capacity without specifiying the lifetimes (as this does not change its size).
+/// We can then take the allocated pointer and capacity from the Vec and store them for later
+/// use in MMParseWork. Note we use ManuallyDrop so that the pinter is not deallocated when
+/// the originally vector goes out of scope.
+/// 
+/// At the start of each [MMParse::mk_pos_iter] call, we can then construct a new empty 
+/// Vec using the ptr and capacity stored in the [MMParseWork] struct. When the Vec has
+/// been filled, we again use ManuallyDrop to prevent dealloaction of the memory, and
+/// update the [MMParseWork] struct in case of any changes.
+///  
+/// Extreme care must be taken in using this struct, which is why it is private to this
+/// module and should not be made public!
+struct MMParseWork {
+    ptr: *mut u8,
+    cap: usize,
+}
+
+impl Default for MMParseWork {
+    fn default() -> Self {
+        let v: Vec<ModUnitIterData<'_, '_>> = Vec::with_capacity(N_MODS);
+        let mut me = ManuallyDrop::new(v);
+        let (ptr, cap) = (me.as_mut_ptr() as *mut u8, me.capacity());
+        Self { ptr, cap }
+    }
+}
+
 // Size of backing store for ModUnits in a MM tag (N_MODS2).  Note that we are using SmallVec so we
 // can have more mods than this, but if the number of greater it will be allocated and stored on the heap.
 #[derive(Default)]
@@ -32,14 +70,23 @@ pub struct MMParse {
     data_vec: Vec<Modification>,
 
     ml_data: Vec<u8>,
+
+    m_data: MMParseWork,
+}
+
+ 
+impl Drop for MMParse {
+    fn drop(&mut self) {
+        let v = unsafe { Vec::from_raw_parts(self.m_data.ptr as *mut ModUnitIterData<'_, '_>, 0, self.m_data.cap) };
+        drop(v);
+    }
 }
 
 impl MMParse {
-    
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     fn new_unit(&mut self) -> &mut ModUnit {
         if self.n_units == self.mod_units.len() {
             self.mod_units.push(Default::default())
@@ -96,7 +143,8 @@ impl MMParse {
         rec: &'b BamRec,
         mm: &'b [u8],
     ) -> Result<ModIter<'a, 'b>, BaseModsError>
-   where 'a : 'b
+    where
+        'a: 'b,
     {
         self.parse_tags(rec, mm)?;
 
@@ -106,7 +154,9 @@ impl MMParse {
 
         self.current_select.clear();
         let s = self.selection.as_deref();
-        let mut mdata = Vec::with_capacity(self.n_units);
+
+        let mut mdata = unsafe { Vec::from_raw_parts(self.m_data.ptr as *mut ModUnitIterData<'_, '_>, 0, self.m_data.cap) };
+
         for unit in &self.mod_units[0..self.n_units] {
             if unit.data().is_none() {
                 continue;
@@ -137,6 +187,9 @@ impl MMParse {
             }
         }
         let seq_iter = rec.seq();
+        let mut mdata = ManuallyDrop::new(mdata);
+        self.m_data = MMParseWork{ptr: mdata.as_mut_ptr() as *mut u8, cap: mdata.capacity()};
+        
         Ok(ModIter::make(
             &mut self.data_vec,
             &self.current_select,
@@ -149,8 +202,9 @@ impl MMParse {
     pub fn mod_iter<'a, 'b>(
         &'a mut self,
         rec: &'b BamRec,
-    ) -> Result<Option<ModIter<'a, 'b>>, BaseModsError> 
-    where 'a : 'b
+    ) -> Result<Option<ModIter<'a, 'b>>, BaseModsError>
+    where
+        'a: 'b,
     {
         self.clear();
 
