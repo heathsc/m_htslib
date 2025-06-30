@@ -68,7 +68,8 @@ impl ModUnit {
             canonical_base.complement() as usize
         } else {
             canonical_base as usize
-        }] as usize;
+        }];
+        
         if base_count < total_seq {
             return Err(BaseModsError::MMSeqMismatch);
         }
@@ -108,7 +109,7 @@ pub struct ModUnitData {
     mm_data_range: Range<usize>,
     ml_data_range: Range<usize>,
     n_delta: usize,
-    first_delta: usize,
+    first_delta: u32,
     implicit: bool,
 }
 
@@ -129,7 +130,7 @@ impl ModUnitData {
         self.n_delta
     }
     
-    pub(super) fn first_delta(&self) -> usize {
+    pub(super) fn first_delta(&self) -> u32 {
         self.first_delta
     }
 
@@ -166,12 +167,12 @@ fn check_implicit(v: &[u8]) -> Result<(bool, usize), BaseModsError> {
 /// Verify MM deltas and count number of deltas + total number of canonical bases accounts for.
 /// Will panic if v is empty.  Returns a tuple with the number of deltas, the base count, the
 /// first delta and the index to the *second* delta value (including leading comma) if it exists.
-fn count_delta_entries(v: &[u8]) -> Result<(usize, usize, usize, usize), BaseModsError> {
+fn count_delta_entries(v: &[u8]) -> Result<(usize, u32, u32, usize), BaseModsError> {
     let (first_delta, a) = parse_mm_count_fwd(v)?;
 
     let mut ix = a[0];
     let mut n_delta = 1;
-    let mut total_seq: usize = first_delta + 1;
+    let mut total_seq: u32 = first_delta + 1;
     let ret = ix;
     while ix < v.len() {
         let (delta, ix1) = parse_mm_count_fwd(&v[ix..])?;

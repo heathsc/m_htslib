@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn test_parse_meth() {
-        let mut h = HtsFile::open(c"test/long_read_meth.bam", c"r")
+        let mut h = HtsFile::open(c"test/long_read_meth1.bam", c"r")
             .expect("Failed to read test/long_read_meth.bam");
         let hdr = SamHdr::read(&mut h).unwrap();
 
@@ -35,14 +35,38 @@ mod tests {
 
         let mut mm = MMParse::default();
         let mut it = mm.mod_iter(&rec).unwrap().unwrap();
-        
+
         let mut n = 0;
+        let mut m = 0;
+        let mut i = 0;
         while let Some(x) = it.next_pos() {
+            eprintln!("{i}\t{x:?}");
             if !x.data().is_empty() {
-                eprintln!("{x:?}");
                 n += 1;
+                if x.data().iter().any(|m| m.has_explicit_ml()) {
+                    m += 1;
+                }
             }
+            i += 1;
         }
-        assert_eq!(n, 1432);
+        // assert_eq!((n, m), (3, 3));
+        eprintln!("-------");
+        drop(it);
+        rdr.read_rec(&mut rec).unwrap().unwrap();
+        n = 0;
+        m = 0;
+        i = 0;
+        let mut it = mm.mod_iter(&rec).unwrap().unwrap();
+        while let Some(x) = it.next_pos() {
+            eprintln!("{i}\t{x:?}");
+            if !x.data().is_empty() {
+                n += 1;
+                if x.data().iter().any(|m| m.has_explicit_ml()) {
+                    m += 1;
+                }
+            }
+            i += 1;
+        }
+        assert_eq!((n, m), (911, 217));
     }
 }

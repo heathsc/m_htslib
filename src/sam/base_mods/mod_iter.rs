@@ -31,7 +31,7 @@ pub enum ModUnitIterValue<'a> {
 pub struct ModUnitIterData<'a, 'b> {
     mod_iter: MdIter<'b>,
     mod_unit: &'a ModUnit,
-    data: Option<(usize, &'b [u8])>,
+    data: Option<(u32, &'b [u8])>,
     current_value: ModUnitIterValue<'b>,
     done: bool,
 }
@@ -40,7 +40,7 @@ impl<'a, 'b> ModUnitIterData<'a, 'b> {
     pub(super) fn make(
         mod_iter: MdIter<'b>,
         mod_unit: &'a ModUnit,
-        data: Option<(usize, &'b [u8])>,
+        data: Option<(u32, &'b [u8])>,
     ) -> Self {
         Self {
             mod_iter,
@@ -62,8 +62,8 @@ pub struct ModIter<'a, 'b> {
     select: &'a [(usize, usize)],
     unit_iters: Vec<ModUnitIterData<'a, 'b>>,
     seq_iter: SeqIter<'b>,
-    reversed: bool,
     finished: bool,
+    reversed: bool,
 }
 
 impl<'a, 'b> ModIter<'a, 'b> {
@@ -80,8 +80,8 @@ impl<'a, 'b> ModIter<'a, 'b> {
             select,
             unit_iters,
             seq_iter,
-            reversed,
             finished,
+            reversed,
         }
     }
 
@@ -90,10 +90,7 @@ impl<'a, 'b> ModIter<'a, 'b> {
             None
         } else if let Some(sbase) =
             // Get next sequence base from read (reverse complement if necessary)
-            self
-                .seq_iter
-                .next()
-                .map(|s| if self.reversed { s.complement() } else { s })
+            self.seq_iter.next()
         {
             // This is where we store any matching mods
             self.data_vec.clear();
@@ -105,6 +102,11 @@ impl<'a, 'b> ModIter<'a, 'b> {
                 unit.current_value = ModUnitIterValue::Missing;
             }
 
+            let sbase1 = if self.reversed {
+                sbase.complement()
+            } else {
+                sbase
+            };
             // Go through selected modifications to see if they match
             for (i, j) in self.select {
                 let unit = &mut self.unit_iters[*i];
@@ -112,17 +114,18 @@ impl<'a, 'b> ModIter<'a, 'b> {
                 // sequence base
                 if !unit.done {
                     // Only look at mods where the sequenced base matches the canonical base
-                    if (sbase.as_u8() & unit.mod_unit.mods()[*j].canonical_base().as_u8()) != 0 {
+                    if (sbase1.as_u8() & unit.mod_unit.mods()[*j].canonical_base().as_u8()) != 0 {
                         // Check if we need to skip this base
                         if let Some((delta, probs)) = unit.data.take() {
                             if delta == 0 {
                                 // We are at the modified site.  Take the probability value and
                                 // get the next one (if present)
                                 unit.current_value = ModUnitIterValue::Explicit(probs);
-                                unit.data = unit.mod_iter.next();
+                                unit.data = unit.mod_iter.next().or(Some((u32::MAX, &[])))
                             } else {
-                                // Otherwise decrement count
-                                unit.data = Some((delta - 1, probs));
+                                unit.data =
+                                    Some((if probs.is_empty() { delta } else { delta - 1 }, probs));
+
                                 if unit.mod_unit.data().unwrap().implicit() {
                                     unit.current_value = ModUnitIterValue::Implicit
                                 }

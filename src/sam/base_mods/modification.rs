@@ -20,15 +20,15 @@ pub struct Modification {
     inner: u64,
 }
 
-const MF_REVERSE_STRAND: u8 = 1;
-const MF_MOD_CODE_PRESENT: u8 = 2;
-const MF_CHEBI_PRESENT: u8 = 4;
-const MF_ML_PRESENT: u8 = 8;
-const MF_ML_EXPLICIT: u8 = 16;
+pub const MF_REVERSE_STRAND: u8 = 1;
+pub const MF_MOD_CODE_PRESENT: u8 = 2;
+pub const MF_CHEBI_PRESENT: u8 = 4;
+pub const MF_ML_PRESENT: u8 = 8;
+pub const MF_ML_EXPLICIT: u8 = 16;
 
 impl fmt::Display for Modification {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let strand = if self.reverse_strand() { '-' } else { '+' };
+        let strand = if self.is_reversed() { '-' } else { '+' };
         if f.alternate() {
             if let Some(b) = self.base_mod_code() {
                 if let Some(s) = match b {
@@ -193,8 +193,12 @@ impl Modification {
         Ok(Self { inner })
     }
 
-    pub fn reverse_strand(&self) -> bool {
+    pub fn is_reversed(&self) -> bool {
         self.flags() & MF_REVERSE_STRAND != 0
+    }
+    
+    pub fn has_explicit_ml(&self) -> bool {
+        self.flags() & (MF_ML_PRESENT | MF_ML_EXPLICIT) == MF_ML_PRESENT | MF_ML_EXPLICIT
     }
 
     /// Parse modifications in the format found in the MM tag.  The modifications found
