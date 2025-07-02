@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn test_parse_meth() {
-        let mut h = HtsFile::open(c"test/long_read_meth1.bam", c"r")
+        let mut h = HtsFile::open(c"test/long_read_meth.bam", c"r")
             .expect("Failed to read test/long_read_meth.bam");
         let hdr = SamHdr::read(&mut h).unwrap();
 
@@ -49,9 +49,8 @@ mod tests {
             }
             i += 1;
         }
-        // assert_eq!((n, m), (3, 3));
+        assert_eq!((n, m), (13, 13));
         eprintln!("-------");
-        // drop(it);
         rdr.read_rec(&mut rec).unwrap().unwrap();
         n = 0;
         m = 0;
@@ -67,6 +66,6 @@ mod tests {
             }
             i += 1;
         }
-        assert_eq!((n, m), (911, 217));
+        assert_eq!((n, m), (10, 10));
     }
 }
