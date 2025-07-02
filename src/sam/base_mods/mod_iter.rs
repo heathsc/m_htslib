@@ -2,15 +2,14 @@ use std::mem::ManuallyDrop;
 
 use crate::{base::Base, sam::SeqIter};
 
-use super::{ModUnit, Modification, delta::DeltaItr};
+use super::{ModUnit, Modification, mm_parse::MlIter, delta::DeltaItr};
 
-pub(super) type MlIter<'a> = Box<dyn Iterator<Item = &'a [u8]> + 'a>;
-pub(super) type MdIter<'a> = std::iter::Zip<DeltaItr<'a>, MlIter<'a>>;
+pub(super) type MdIter<'a> = std::iter::Zip<DeltaItr<'a>, MlIter<'a, u8>>;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ModIterItem<'a> {
     seq_base: Base,
-    data: &'a Vec<Modification>,
+    data: &'a [Modification],
 }
 
 impl<'a> ModIterItem<'a> {
@@ -87,7 +86,7 @@ impl<'a, 'b> ModIter<'a, 'b> {
         }
     }
 
-    pub fn next_pos(&mut self) -> Option<ModIterItem> {
+    pub fn next_pos(&mut self) -> Option<ModIterItem<'_>> {
         if self.finished {
             None
         } else if let Some(sbase) =

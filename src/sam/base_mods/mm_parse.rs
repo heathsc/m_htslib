@@ -7,12 +7,12 @@ use crate::{
     sam::{BamAuxTagType, BamAuxVal, BamRec},
 };
 
-use super::{MlIter, ModIter, ModUnit, ModUnitIterData, Modification, delta::DeltaItr};
+use super::{ModIter, ModUnit, ModUnitIterData, Modification, delta::DeltaItr};
 
 const N_MODS: usize = 4;
 
 /// This is an ugly hack - I agree...
-/// 
+///
 /// We want to have a persistent storage for a Vec<ModUnitIterData<'a, 'b>> so
 /// that we can use it for subsequent calls to generate an iterator, avoiding the
 /// need to allocate a new Vec each time. THe problem is that if we include it in
@@ -22,18 +22,18 @@ const N_MODS: usize = 4;
 /// iterator is in scope. For the next parse, the vector will be reset to empty, but
 /// the compiler does not know that so we end up with the lifetimes of MMParse, the
 /// BamRec and the iterator all linked together.
-/// 
+///
 /// To avoid this, we take advantage of the fact that we can create a Vec<ModUnitIterData>
 /// with a given capacity without specifiying the lifetimes (as this does not change its size).
 /// We can then take the allocated pointer and capacity from the Vec and store them for later
 /// use in MMParseWork. Note we use ManuallyDrop so that the pinter is not deallocated when
 /// the originally vector goes out of scope.
-/// 
-/// At the start of each [MMParse::mk_pos_iter] call, we can then construct a new empty 
+///
+/// At the start of each [MMParse::mk_pos_iter] call, we can then construct a new empty
 /// Vec using the ptr and capacity stored in the [MMParseWork] struct. When the Vec has
 /// been filled, we again use ManuallyDrop to prevent dealloaction of the memory, and
 /// update the [MMParseWork] struct in case of any changes.
-///  
+///
 /// Extreme care must be taken in using this struct, which is why it is private to this
 /// module and should not be made public!
 struct MMParseWork {
@@ -47,6 +47,14 @@ impl Default for MMParseWork {
         let mut me = ManuallyDrop::new(v);
         let (ptr, cap) = (me.as_mut_ptr() as *mut u8, me.capacity());
         Self { ptr, cap }
+    }
+}
+
+impl Drop for MMParseWork {
+    fn drop(&mut self) {
+        let v =
+            unsafe { Vec::from_raw_parts(self.ptr as *mut ModUnitIterData<'_, '_>, 0, self.cap) };
+        drop(v);
     }
 }
 
@@ -72,14 +80,6 @@ pub struct MMParse {
     ml_data: Vec<u8>,
 
     m_data: MMParseWork,
-}
-
- 
-impl Drop for MMParse {
-    fn drop(&mut self) {
-        let v = unsafe { Vec::from_raw_parts(self.m_data.ptr as *mut ModUnitIterData<'_, '_>, 0, self.m_data.cap) };
-        drop(v);
-    }
 }
 
 impl MMParse {
@@ -155,7 +155,13 @@ impl MMParse {
         self.current_select.clear();
         let s = self.selection.as_deref();
 
-        let mut mdata = unsafe { Vec::from_raw_parts(self.m_data.ptr as *mut ModUnitIterData<'_, '_>, 0, self.m_data.cap) };
+        let mut mdata = unsafe {
+            Vec::from_raw_parts(
+                self.m_data.ptr as *mut ModUnitIterData<'_, '_>,
+                0,
+                self.m_data.cap,
+            )
+        };
 
         for unit in &self.mod_units[0..self.n_units] {
             if unit.data().is_none() {
@@ -180,7 +186,7 @@ impl MMParse {
                     rec.is_reversed(),
                 );
                 let ml_values = &self.ml_data[data.ml_data_range().clone()];
-                let ml_iter = mk_ml_iter(ml_values, rec.is_reversed(), unit.n_mods());
+                let ml_iter = MlIter::make(ml_values, rec.is_reversed(), unit.n_mods());
                 let mut mod_iter = delta_iter.zip(ml_iter);
                 let data = mod_iter.next();
                 mdata.push(ModUnitIterData::make(mod_iter, unit, data))
@@ -188,8 +194,9 @@ impl MMParse {
         }
         let seq_iter = rec.seq();
         let mut mdata = ManuallyDrop::new(mdata);
-        self.m_data = MMParseWork{ptr: mdata.as_mut_ptr() as *mut u8, cap: mdata.capacity()};
-        
+        self.m_data.ptr = mdata.as_mut_ptr() as *mut u8;
+        self.m_data.cap = mdata.capacity();
+
         Ok(ModIter::make(
             &mut self.data_vec,
             &self.current_select,
@@ -339,11 +346,38 @@ impl MMParse {
     }
 }
 
-fn mk_ml_iter(ml: &[u8], reverse: bool, n: usize) -> MlIter {
-    if reverse {
-        Box::new(ml.rchunks(n))
-    } else {
-        Box::new(ml.chunks(n))
+pub(super) struct MlIter<'a, T: 'a> {
+    v: &'a [T],
+    sz: usize,
+    ix: usize,
+    decr: usize,
+    i: usize,
+}
+
+impl<'a, T> MlIter<'a, T> {
+    fn make(v: &'a [T], reverse: bool, sz: usize) -> Self {
+        let (ix, decr, i) = if reverse && v.len() >= sz {
+            (v.len() - sz, sz, 1)
+        } else {
+            (sz, 0, 0)
+        };
+        Self { v, sz, ix, decr, i }
+    }
+}
+
+impl <'a, T> Iterator for MlIter<'a, T> {
+    type Item = &'a [T];
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.v.len() < self.sz {
+            None
+        } else {
+            let (a, b) = self.v.split_at(self.ix);
+            let f = [a, b];
+            self.ix -= self.decr;
+            self.v = f[1 - self.i];
+            Some(f[self.i])
+        }
     }
 }
 

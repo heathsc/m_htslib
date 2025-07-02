@@ -51,7 +51,7 @@ mod tests {
         }
         // assert_eq!((n, m), (3, 3));
         eprintln!("-------");
-        drop(it);
+        // drop(it);
         rdr.read_rec(&mut rec).unwrap().unwrap();
         n = 0;
         m = 0;
