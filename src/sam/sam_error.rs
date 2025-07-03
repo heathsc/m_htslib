@@ -3,7 +3,7 @@ use std::{num::ParseIntError, str::Utf8Error};
 use thiserror::Error;
 use libc::c_int;
 
-use crate::{AuxError, CigarError, CramError, KStringError, ParseINumError};
+use crate::{AuxError, CigarError, CramError, FaidxError, KStringError, ParseINumError};
 
 #[derive(Error, Debug)]
 pub enum SamError {
@@ -37,6 +37,8 @@ pub enum SamError {
     AuxError(#[from] AuxError),
     #[error("Cram Error: {0}")]
     CramError(#[from] CramError),
+    #[error("Faidx Error: {0}")]
+    FaidxError(#[from] FaidxError),
     #[error("Utf8 Error: {0}")]
     Utf8Error(#[from] Utf8Error),
     #[error("Parse Int Error: {0}")]
@@ -99,4 +101,10 @@ pub enum SamError {
     SamReadError(c_int),
     #[error("Query region invalid: {0}")]
     InvalidRegion(String),
+    #[error("BAQ realignment failed (out of memory)")]
+    BaqRealignOutOfMem,
+    #[error("BAQ realignment failed - nothing to realign")]
+    BaqRealignFailed,
+    #[error("BAQ realignment failed - unknown error")]
+    BaqRealignUnknownError,
 }

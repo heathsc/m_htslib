@@ -172,7 +172,7 @@ impl HdrType for Faidx {
 
 impl SeqId for Faidx {
     fn seq_id(&self, s: &CStr) -> Option<usize> {
-        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) }.leak(); 
+        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) }.leak();
         hash.get(&(s.to_bytes_with_nul().as_ptr() as *const c_char))
             .map(|f| f.id as usize)
     }
@@ -208,9 +208,14 @@ impl Sequence {
             Err(FaidxError::IllegalInput)
         } else {
             let a = x - self.start;
-            let b = (y + 1 - self.start).min(self.len);
             let slice = self.seq();
-            Ok(&slice[a..b])
+            Ok(if a >= self.len {
+                &slice[..0]
+            } else {
+                let b = (y + 1 - self.start).min(self.len);
+
+                &slice[a..b]
+            })
         }
     }
 
@@ -245,7 +250,7 @@ mod tests {
 
         let s = h.fetch_seq(c"zz", 0, None).unwrap();
         assert_eq!(s.len(), 30);
-        
+
         let s1 = s.get_seq(7, 14).unwrap();
         assert_eq!(s1, b"AAAATTTT");
     }
