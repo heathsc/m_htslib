@@ -69,6 +69,7 @@ pub(super) fn set_is_del_true(flags: *mut u32, i: u32) {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct KHashRaw<K> {
     n_buckets: KHInt,
     size: KHInt,

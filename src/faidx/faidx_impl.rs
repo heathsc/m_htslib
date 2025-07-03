@@ -14,7 +14,7 @@ use crate::{
     from_c,
     hts::{
         HtsPos,
-        traits::{IdMap, SeqId, HdrType, HtsHdrType},
+        traits::{HdrType, HtsHdrType, IdMap, SeqId},
     },
     khash::{KHashMap, KHashMapRaw},
 };
@@ -33,6 +33,7 @@ pub struct Faidx1Raw {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct FaidxRaw {
     bgzf: *mut BgzfRaw,
     n: c_int,
@@ -76,7 +77,7 @@ impl FaidxRaw {
 
     pub fn get_seq_len<S: AsRef<CStr>>(&self, cname: S) -> Option<usize> {
         let cname = cname.as_ref();
-        let len = unsafe { faidx_seq_len64(self, cname.as_ref().as_ptr()) };
+        let len = unsafe { faidx_seq_len64(self as *const FaidxRaw, cname.as_ptr()) };
         if len < 0 { None } else { Some(len as usize) }
     }
 
@@ -171,21 +172,21 @@ impl HdrType for Faidx {
 
 impl SeqId for Faidx {
     fn seq_id(&self, s: &CStr) -> Option<usize> {
-        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) };
+        let hash = unsafe { KHashMap::from_raw_ptr(self.hash) }.leak(); 
         hash.get(&(s.to_bytes_with_nul().as_ptr() as *const c_char))
             .map(|f| f.id as usize)
     }
 }
-    
+
 impl IdMap for Faidx {
     fn num_seqs(&self) -> usize {
         self.nseq()
     }
-    
+
     fn seq_name(&self, i: usize) -> Option<&CStr> {
         self.iseq(i)
     }
-    
+
     fn seq_len(&self, i: usize) -> Option<usize> {
         self.iseq(i).and_then(|s| self.get_seq_len(s))
     }
@@ -240,6 +241,12 @@ mod tests {
         assert_eq!(l, l1);
         assert_eq!(h.num_seqs(), 5);
         assert_eq!(h.seq_name(1), Some(c"yy"));
-        assert_eq!(h.seq_id(c"yy"), Some(1));
+        assert_eq!(h.seq_id(c"zz"), Some(2));
+
+        let s = h.fetch_seq(c"zz", 0, None).unwrap();
+        assert_eq!(s.len(), 30);
+        
+        let s1 = s.get_seq(7, 14).unwrap();
+        assert_eq!(s1, b"AAAATTTT");
     }
 }

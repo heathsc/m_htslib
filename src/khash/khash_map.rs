@@ -12,6 +12,7 @@ use super::*;
 use crate::KHashError;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct KHashMapRaw<K, V> {
     hash: KHashRaw<K>,
     vals: *mut V,
@@ -124,6 +125,7 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         self._find(key)
             .map(|idx| unsafe { self.get_val_unchecked(idx) })
+        
     }
 
     #[inline]
@@ -220,7 +222,8 @@ impl<'a, K, V> KHashMap<K, V> {
     /// `inner` must be a valid, correctly aligned, pointer to a unique, initialized KHashMapRaw struct
     /// (either initialized from Rust or from C) with the correct types `K` and `V` for the Keys and Values.
     /// In particular, the pointer must be the only existing pointer to the KHashMapRaw structure,
-    /// otherwise the internal structures will be freed twice.
+    /// otherwise the internal structures will be freed twice. If the HashMap is still meant to be used afterwards
+    /// through another pointer, then use [Self::leak] to prevent unwanted deallocation.
     pub unsafe fn from_raw_ptr(inner: *mut KHashMapRaw<K, V>) -> Self {
         assert!(
             !inner.is_null(),
