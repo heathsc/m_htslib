@@ -178,7 +178,7 @@ impl<'a> HexString<'a> {
     }
 
     #[inline]
-    pub fn bytes(&self) -> HexIter {
+    pub fn bytes<'b>(&'b self) -> HexIter<'b> {
         HexIter { data: self.data }
     }
 }

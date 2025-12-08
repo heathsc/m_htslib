@@ -65,7 +65,7 @@ impl BamRec {
     }
 
     #[inline]
-    pub fn aux_tags(&self) -> BamAuxIter {
+    pub fn aux_tags<'a>(&'a self) -> BamAuxIter<'a> {
         BamAuxIter::new(self.get_aux_slice())
     }
 

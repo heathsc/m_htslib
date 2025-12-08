@@ -1,5 +1,6 @@
 pub mod bam1;
 pub mod sam_reader;
+pub mod sam_writer;
 
 pub use bam1::parse::SamParser;
 use bam1::*;

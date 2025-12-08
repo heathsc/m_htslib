@@ -39,7 +39,7 @@ pub struct SamHdrRaw {
 }
 
 pub struct SamHdrTagValue<'a> {
-    tag: [char; 2],
+    tag: Box<[u8]>,
     value: &'a str,
 }
 
@@ -48,24 +48,28 @@ impl<'a> SamHdrTagValue<'a> {
         if s.len() != 2 {
             Err(SamError::IllegalTagLength)
         } else {
-            let mut it = s.chars();
+            let mut it = s.bytes();
             let t1 = it.next().unwrap();
             let t2 = it.next().unwrap();
-            let tag = [t1, t2];
+            let tag = Box::new([t1, t2]);
             Ok(Self { tag, value })
         }
     }
+    //
+    //    pub fn new(tag: [char; 2], value: &'a str) -> Self {
+    //        Self { tag, value }
+    //    }
 
-    pub fn new(tag: [char; 2], value: &'a str) -> Self {
-        Self { tag, value }
-    }
-
-    pub fn tag(&self) -> [char; 2] {
-        self.tag
+    pub fn tag(&self) -> &[u8] {
+        &self.tag
     }
 
     pub fn value(&self) -> &str {
         self.value
+    }
+
+    pub fn tag_as_cstring(&self) -> Result<CString, SamError> {
+        CString::new(self.tag.as_ref()).map_err(|_| SamError::NullInTagValue)
     }
 
     pub fn value_as_cstring(&self) -> Result<CString, SamError> {
@@ -188,10 +192,21 @@ macro_rules! sam_hdr_line {
         let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(tmp_line);
         tl
     }};
-    ( "CO", $s:expr ) => {
+    ( "CO", $s:expr ) => {{
         let tl: Result<$crate::sam::SamHdrLine, $crate::SamError> = Ok(SamHdrLine::comment($s));
         tl
-    };
+    }};
+}
+
+#[macro_export]
+macro_rules! sam_hdr_add_pg {
+    ( $h: expr, $n: expr, $( $t: expr, $v:expr ),* ) => {{
+        let mut tmp_line: Vec<$crate::sam::SamHdrTagValue> = Vec::with_capacity(8);
+        $(
+           tmp_line.push($crate::sam::SamHdrTagValue::new_tag($t, $v)?);
+        )*
+        $h.add_pg_line($n, &tmp_line)
+    }};
 }
 
 #[link(name = "hts")]
@@ -254,7 +269,7 @@ unsafe extern "C" {
     ) -> c_int;
     fn sam_hdr_count_lines(hd: *mut SamHdrRaw, type_: *const c_char) -> c_int;
     // fn sam_hdr_pg_id(hd: *mut SamHdrRaw, name: *const char) -> *const c_char;
-    // fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
+    fn sam_hdr_add_pg(hd: *mut SamHdrRaw, name: *const c_char, ...) -> c_int;
 }
 
 impl SamHdrRaw {
@@ -432,7 +447,7 @@ impl SamHdr {
     /// Get a shared reference from inner. We return a read guard along with the
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
-    fn read_guard(&self) -> SamHdrReadGuard {
+    fn read_guard<'a>(&'a self) -> SamHdrReadGuard<'a> {
         SamHdrReadGuard {
             inner: self.inner.read().unwrap(),
         }
@@ -441,7 +456,7 @@ impl SamHdr {
     /// Get a mutable reference from inner. We return a writeguard along with the
     /// reference so that the guard remains in scope and the reference stays valid
     #[inline]
-    pub(in crate::sam) fn write_guard(&self) -> SamHdrWriteGuard {
+    pub(in crate::sam) fn write_guard<'a>(&'a self) -> SamHdrWriteGuard<'a> {
         SamHdrWriteGuard {
             inner: self.inner.write().unwrap(),
         }
@@ -528,8 +543,116 @@ impl SamHdr {
 
     pub fn add_line(&mut self, line: &SamHdrLine) -> Result<(), SamError> {
         let nl = format!("{line}");
-        let cs = CString::new(nl.as_str()).map_err(|_| SamError::IllegalHeaderChars)?;
+        let cs = str_2_cstring(nl.as_str())?;
         self.add_lines(&cs)
+    }
+
+    pub fn add_pg_line(&mut self, name: &str, v: &[SamHdrTagValue]) -> Result<(), SamError> {
+        let n = str_2_cstring(name)?;
+        let tv = |t: &SamHdrTagValue| match (t.tag_as_cstring(), t.value_as_cstring()) {
+            (Ok(c1), Ok(c2)) => Ok((c1, c2)),
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        };
+
+        let nul: *const i8 = ptr::null();
+        let v1: Vec<_> = v
+            .iter()
+            .map(|t| tv(t))
+            .collect::<Result<Vec<_>, SamError>>()?;
+
+        let ret = match v.len() {
+            0 => unsafe { sam_hdr_add_pg(self.as_mut(), n.as_ptr(), nul) },
+            1 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    nul,
+                )
+            },
+            2 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    v1[1].0.as_ptr(),
+                    v1[1].1.as_ptr(),
+                    nul,
+                )
+            },
+            3 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    v1[1].0.as_ptr(),
+                    v1[1].1.as_ptr(),
+                    v1[2].0.as_ptr(),
+                    v1[2].1.as_ptr(),
+                    nul,
+                )
+            },
+            4 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    v1[1].0.as_ptr(),
+                    v1[1].1.as_ptr(),
+                    v1[2].0.as_ptr(),
+                    v1[2].1.as_ptr(),
+                    v1[3].0.as_ptr(),
+                    v1[3].1.as_ptr(),
+                    nul,
+                )
+            },
+            5 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    v1[1].0.as_ptr(),
+                    v1[1].1.as_ptr(),
+                    v1[2].0.as_ptr(),
+                    v1[2].1.as_ptr(),
+                    v1[3].0.as_ptr(),
+                    v1[3].1.as_ptr(),
+                    v1[4].0.as_ptr(),
+                    v1[4].1.as_ptr(),
+                    nul,
+                )
+            },
+            6 => unsafe {
+                sam_hdr_add_pg(
+                    self.as_mut(),
+                    n.as_ptr(),
+                    v1[0].0.as_ptr(),
+                    v1[0].1.as_ptr(),
+                    v1[1].0.as_ptr(),
+                    v1[1].1.as_ptr(),
+                    v1[2].0.as_ptr(),
+                    v1[2].1.as_ptr(),
+                    v1[3].0.as_ptr(),
+                    v1[3].1.as_ptr(),
+                    v1[4].0.as_ptr(),
+                    v1[4].1.as_ptr(),
+                    v1[5].0.as_ptr(),
+                    v1[5].1.as_ptr(),
+                    nul,
+                )
+            },
+            _ => -1,
+        };
+
+        match ret {
+            0 => Ok(()),
+            _ => Err(SamError::FailedAddHeaderLine),
+        }
     }
 
     pub fn remove_except(
@@ -682,6 +805,11 @@ impl SamHdr {
     }
 }
 
+#[inline]
+fn str_2_cstring(s: &str) -> Result<CString, SamError> {
+    CString::new(s).map_err(|_| SamError::IllegalHeaderChars)
+}
+
 struct SamHdrReadGuard<'a> {
     inner: RwLockReadGuard<'a, *mut SamHdrRaw>,
 }
@@ -699,7 +827,6 @@ impl SamHdrReadGuard<'_> {
         *self.inner.deref()
     }
 }
-
 
 pub(in crate::sam) struct SamHdrWriteGuard<'a> {
     inner: RwLockWriteGuard<'a, *mut SamHdrRaw>,

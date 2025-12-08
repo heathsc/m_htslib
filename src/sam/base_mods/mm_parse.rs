@@ -223,10 +223,10 @@ impl MMParse {
             ))
         })? {
             // Check MN tag (if it exists) reports the same as the sequence length, otherwise we cannot trust the MM tags.
-            if let Some(n) = mn {
-                if n as usize != rec.seq_len() {
-                    return Err(BaseModsError::MMSeqMismatch);
-                }
+            if let Some(n) = mn
+                && n as usize != rec.seq_len()
+            {
+                return Err(BaseModsError::MMSeqMismatch);
             }
             self.mk_pos_iter(rec, mm.to_bytes()).map(Some)
         } else {
@@ -365,9 +365,9 @@ impl<'a, T> MlIter<'a, T> {
     }
 }
 
-impl <'a, T> Iterator for MlIter<'a, T> {
+impl<'a, T> Iterator for MlIter<'a, T> {
     type Item = &'a [T];
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.v.len() < self.sz {
             None

@@ -1,4 +1,4 @@
-use std::{ffi::CStr, fmt, error, iter::FusedIterator};
+use std::{error, ffi::CStr, fmt, iter::FusedIterator};
 
 use super::hts_itr::HtsItr;
 
@@ -93,4 +93,11 @@ pub trait ReadRecIter: ReadRec {
         itr: &mut HtsItr,
         rec: &mut Self::Rec,
     ) -> Result<Option<()>, Self::Err>;
+}
+
+pub trait WriteRec {
+    type Rec;
+    type Err: fmt::Debug + error::Error + Send + Sync + 'static;
+
+    fn write_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
 }

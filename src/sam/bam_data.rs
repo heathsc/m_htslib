@@ -23,7 +23,7 @@ pub struct BamData {
 }
 
 #[derive(Debug, Default, Copy, Clone)]
-struct BDState {
+pub(super) struct BDState {
     n_cigar_elem: u32,
     qname_len: u16,
     extra_nul: u8,

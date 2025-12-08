@@ -13,6 +13,8 @@ pub enum SamError {
     FailedHeaderWrite,
     #[error("Failed to add line to SAM/BAM/CRAM header")]
     FailedAddHeaderLine,
+    #[error("Failed to add PG line to SAM/BAM/CRAM header")]
+    FailedAddPgHeaderLine,
     #[error("Failed to remove lines from SAM/BAM/CRAM header")]
     FailedRemoveHeaderLines,
     #[error("Out of memory")]

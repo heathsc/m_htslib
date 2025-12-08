@@ -144,10 +144,10 @@ impl BamRec {
             }
 
             // Check Cigar (if present) has same length as sequence
-            if let Some(cigar) = self.cigar() {
-                if l != cigar.query_len() as usize {
-                    return Err(SamError::SeqCigarMismatch);
-                }
+            if let Some(cigar) = self.cigar()
+                && l != cigar.query_len() as usize
+            {
+                return Err(SamError::SeqCigarMismatch);
             }
 
             self.inner.core.l_qseq = l as i32;
@@ -359,4 +359,3 @@ mod tests {
         assert_eq!(x, 0);
     }
 }
-

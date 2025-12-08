@@ -3,7 +3,7 @@ use std::ptr::NonNull;
 pub mod faidx_error;
 pub mod faidx_impl;
 
-use faidx_impl::FaidxRaw;
+use faidx_impl::{FaidxRaw, SeqStore};
 
 #[derive(Debug)]
 pub struct Faidx {
@@ -11,7 +11,6 @@ pub struct Faidx {
 }
 
 pub struct Sequence {
-    inner: NonNull<u8>,
+    inner: SeqStore,
     start: usize,
-    len: usize,
 }

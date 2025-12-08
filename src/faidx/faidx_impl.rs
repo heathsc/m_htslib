@@ -113,11 +113,7 @@ impl FaidxRaw {
                 } else if len < 0 || seq.is_null() {
                     Err(FaidxError::ErrorLoadingSequence)
                 } else {
-                    Ok(Sequence {
-                        inner: NonNull::new(seq as *mut u8).unwrap(),
-                        start: x + 1,
-                        len: len as usize,
-                    })
+                    Ok(Sequence::from_ptr(seq as *const u8, len as usize, x))
                 }
             }
         } else {
@@ -192,16 +188,62 @@ impl IdMap for Faidx {
     }
 }
 
+pub(super) enum SeqStore {
+    CPtr(NonNull<u8>, usize),
+    Slice(Box<[u8]>),
+}
+
+impl SeqStore {
+    fn seq(&self) -> &[u8] {
+        match self {
+            Self::CPtr(p, len) => unsafe { std::slice::from_raw_parts(p.as_ptr(), *len) }
+            Self::Slice(s) => s.as_ref(),
+        }
+    }
+    
+    fn len(&self) -> usize {
+        match self {
+            Self::CPtr(_, len) => *len,
+            Self::Slice(s) => s.len(),
+        }
+    }
+}
+
 unsafe impl Send for Sequence {}
 unsafe impl Sync for Sequence {}
 
 impl Drop for Sequence {
     fn drop(&mut self) {
-        unsafe { free(self.inner.as_ptr() as *mut c_void) }
+        if let SeqStore::CPtr(p, _) = self.inner {
+            unsafe { free(p.as_ptr() as *mut c_void) }
+        }
     }
 }
 
 impl Sequence {
+    pub fn from_boxed_slice(slice: Box<[u8]>, offset: usize) -> Self {
+        Self {
+            inner: SeqStore::Slice(slice),
+            start: offset + 1,
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+    
+    pub fn from_slice(slice: &[u8], offset: usize) -> Self {
+        Self::from_boxed_slice(slice.to_owned().into_boxed_slice(), offset)
+    }
+
+    pub fn from_ptr(ptr: *const u8, len: usize, offset: usize) -> Self {
+        Self {
+            inner: SeqStore::CPtr(NonNull::new(ptr as *mut u8).unwrap(), len),
+            start: offset + 1,
+        }
+    }
+
     // Get sequence between x and y inclusive (1 offset)
     pub fn get_seq(&self, x: usize, y: usize) -> Result<&[u8], FaidxError> {
         if x < 1 || x < self.start || x > y {
@@ -209,23 +251,20 @@ impl Sequence {
         } else {
             let a = x - self.start;
             let slice = self.seq();
-            Ok(if a >= self.len {
+            let len = self.len();
+            Ok(if a >= len {
                 &slice[..0]
             } else {
-                let b = (y + 1 - self.start).min(self.len);
-
+                let b = (y + 1 - self.start).min(len);
                 &slice[a..b]
             })
         }
     }
 
     // Get entire loaded sequence as a slice
+    #[inline]
     pub fn seq(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.inner.as_ptr(), self.len) }
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
+        self.inner.seq()
     }
 
     pub fn is_empty(&self) -> bool {

@@ -138,17 +138,17 @@ impl BamRec {
     }
 
     #[inline]
-    pub fn seq(&self) -> SeqIter {
+    pub fn seq<'a>(&'a self) -> SeqIter<'a> {
         SeqIter::new(self.seq_slice(), self.inner.core.l_qseq as usize)
     }
 
     #[inline]
-    pub fn qual(&self) -> QualIter {
+    pub fn qual<'a>(&'a self) -> QualIter<'a> {
         QualIter::new(self.qual_slice())
     }
 
     #[inline]
-    pub fn seq_qual(&self) -> SeqQualIter {
+    pub fn seq_qual<'a> (&'a self) -> SeqQualIter<'a> {
         SeqQualIter::new(self.seq_slice(), self.qual_slice())
     }
 
