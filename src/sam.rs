@@ -16,5 +16,6 @@ pub use cigar_buf::*;
 pub use record::bam1::aux_iter::*;
 pub use record::*;
 pub use sam_hdr::*;
-pub use sam_reader::*;
+pub use record::sam_reader::*;
+pub use record::sam_writer::*;
 pub use seq_iter::*;
