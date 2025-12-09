@@ -18,7 +18,7 @@ impl Default for BamData {
 }
 
 impl BamData {
-    pub fn writer(&mut self, section: BDSection) -> BDWriter {
+    pub fn writer<'a>(&'a mut self, section: BDSection) -> BDWriter<'a> {
         assert!(self.section.is_none());
         self.section = Some(section);
         match self.mask.compare(section) {

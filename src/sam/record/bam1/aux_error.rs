@@ -10,6 +10,10 @@ pub enum AuxError {
     InternalError,
     #[error("Aux tag too short (incomplete)")]
     ShortTag,
+    #[error("Illegal aux tag ID")]
+    BadTagId,
+    #[error("Error while adding aux data to record")]
+    AddingAuxFailed,
     #[error("Bad characters in tag ID ({0}, {1})")]
     BadCharsInTagId(u8, u8),
     #[error("Duplicate tag ID ({0}{1})")]

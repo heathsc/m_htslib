@@ -4,10 +4,25 @@ use std::{
     str::FromStr,
 };
 
-use libc::c_int;
+use libc::{c_char, c_int};
 
-use super::{super::BamRec, aux_error::AuxError, aux_iter::BamAuxTag};
+use super::{
+    super::{BamRec, bam1_t},
+    aux_error::AuxError,
+    aux_iter::BamAuxTag,
+};
 use crate::{LeBytes, ParseINumError, sam::BamAuxIter};
+
+#[link(name = "hts")]
+unsafe extern "C" {
+    fn bam_aux_append(
+        b: *mut bam1_t,
+        tag: *const c_char,
+        tp: c_char,
+        len: c_int,
+        data: *const i8,
+    ) -> c_int;
+}
 
 /// Represnts a block of tag data that is to be deleted.
 /// i is the index of the tag w.r.t to all tags stored in the record
@@ -64,12 +79,40 @@ impl BamRec {
         self.make_data_slice(off, sz)
     }
 
+    pub fn add_tag(&mut self, tag: &BamAuxTag) -> Result<(), AuxError> {
+        let s = tag.data();
+        self.add_tag_with_id(&s[0..2], tag)
+    }
+
+    pub fn add_tag_with_id(&mut self, tag_id: &[u8], tag: &BamAuxTag) -> Result<(), AuxError> {
+        if tag_id.len() == 2 && tag_id[0].is_ascii_alphabetic() && tag_id[1].is_ascii_alphanumeric()
+        {
+            let s = tag.data();
+            if unsafe {
+                bam_aux_append(
+                    self.as_mut_ptr(),
+                    tag_id.as_ptr() as *const c_char,
+                    s[2] as c_char,
+                    (s.len() - 3) as c_int,
+                    s[3..].as_ptr() as *const c_char,
+                )
+            } == 0
+            {
+                Ok(())
+            } else {
+                Err(AuxError::AddingAuxFailed)
+            }
+        } else {
+            Err(AuxError::BadTagId)
+        }
+    }
+
     #[inline]
     pub fn aux_tags<'a>(&'a self) -> BamAuxIter<'a> {
         BamAuxIter::new(self.get_aux_slice())
     }
 
-    pub fn get_tag<'a>(&'a self, tag_id: &str) -> Result<Option<BamAuxTag<'a>>, AuxError> {
+    pub fn get_tag<'a>(&'a self, tag_id: &str) -> Result<Option<&'a BamAuxTag>, AuxError> {
         for t in self.aux_tags() {
             let tag = t?;
             if tag.id()? == tag_id {

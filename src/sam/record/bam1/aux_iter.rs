@@ -7,13 +7,13 @@ use crate::{AuxError, LeBytes};
 /// The length of the data slice is always at least 3 (2 byte tag + type)
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct BamAuxTag<'a> {
-    data: &'a [u8],
+pub struct BamAuxTag {
+    data: [u8],
 }
 
-impl fmt::Display for BamAuxTag<'_> {
+impl fmt::Display for BamAuxTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.data;
+        let s = &self.data;
         write!(
             f,
             "{}{}:{}",
@@ -25,14 +25,19 @@ impl fmt::Display for BamAuxTag<'_> {
     }
 }
 
-impl <'a>BamAuxTag<'a> {
+impl BamAuxTag {
+    
+    pub fn new(s: &[u8]) -> &Self {
+        unsafe { &*(s as *const [u8] as *const Self) }
+    }
+    
     pub fn id(&self) -> Result<&str, AuxError> {
         let s = std::str::from_utf8(&self.data[..2])?;
         Ok(s)
     }
-
+    
     #[inline]
-    pub fn get_val(&self) -> Result<BamAuxVal<'a>, AuxError> {
+    pub fn get_val<'a>(&'a self) -> Result<BamAuxVal<'a>, AuxError> {
         BamAuxVal::from_u8_slice(&self.data[2..])
     }
 
@@ -46,7 +51,7 @@ impl <'a>BamAuxTag<'a> {
 
     #[inline]
     pub fn data(&self) -> &[u8] {
-        self.data
+        &self.data
     }
 
     pub fn validate(&self) -> Result<[u8; 2], AuxError> {
@@ -402,7 +407,7 @@ impl<'a> BamAuxIter<'a> {
 }
 
 impl<'a> Iterator for BamAuxIter<'a> {
-    type Item = Result<BamAuxTag<'a>, AuxError>;
+    type Item = Result<&'a BamAuxTag, AuxError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.is_empty() {
@@ -411,7 +416,7 @@ impl<'a> Iterator for BamAuxIter<'a> {
             Some(get_bam_tag_length(self.data).map(|l| {
                 let (data, s) = self.data.split_at(l);
                 self.data = s;
-                BamAuxTag { data }
+                BamAuxTag::new(data)
             }))
         }
     }
@@ -439,6 +444,7 @@ mod tests {
         hdr.add_lines(c"@HD\tVN:1.6\tSO:coordinate")?;
         assert_eq!(hdr.length().unwrap(), 25);
         let nl = sam_hdr_line!("SQ", "SN", "chr1", "LN", "1009800")?;
+        eprintln!("ooook! {nl}");
         hdr.add_line(&nl)?;
 
         Ok(hdr)
@@ -454,7 +460,7 @@ mod tests {
         p.parse(&mut b, &mut hdr, b"read_id1\t147\tchr1\t412\t49\t11M\t=\t193\t-380\tCTGCAATACGC\tAAFJFFBCAFF\txa:Z:Hello world\txb:i:666")?;
 
         let mut tags = b.aux_tags();
-
+        
         // Check first tag (Z)
         let tag = tags.next().unwrap()?;
         assert_eq!(tag.id()?, "xa");

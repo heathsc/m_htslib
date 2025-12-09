@@ -357,7 +357,7 @@ pub(super) struct MlIter<'a, T: 'a> {
 impl<'a, T> MlIter<'a, T> {
     fn make(v: &'a [T], reverse: bool, sz: usize) -> Self {
         let (ix, decr, i) = if reverse && v.len() >= sz {
-            (v.len() - sz, sz, 1)
+            (v.len(), sz, 1)
         } else {
             (sz, 0, 0)
         };
@@ -372,9 +372,9 @@ impl<'a, T> Iterator for MlIter<'a, T> {
         if self.v.len() < self.sz {
             None
         } else {
+            self.ix -= self.decr;
             let (a, b) = self.v.split_at(self.ix);
             let f = [a, b];
-            self.ix -= self.decr;
             self.v = f[1 - self.i];
             Some(f[self.i])
         }

@@ -79,7 +79,7 @@ impl<'a> SamHdrTagValue<'a> {
 
 impl fmt::Display for SamHdrTagValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}:{}", self.tag[0], self.tag[1], self.value)
+        write!(f, "{}{}:{}", self.tag[0] as char, self.tag[1] as char, self.value)
     }
 }
 
