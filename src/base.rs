@@ -49,6 +49,11 @@ impl Base {
     pub fn as_char(&self) -> char {
         BASE_TABLE[self.0 as usize] as char
     }
+    
+    #[inline]
+    pub fn single_base(&self) -> Option<u8> {
+        SINGLE_BASE[self.0 as usize]
+    }
 
     #[inline]
     pub fn complement(&self) -> Self {
@@ -116,4 +121,8 @@ const SEQ_NT16_TABLE: [u8; 256] = [
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+];
+
+const SINGLE_BASE: [Option<u8>; 16] = [
+    None, Some(0), Some(1), None, Some(2), None, None, None, Some(3), None, None, None, None, None, None, None
 ];

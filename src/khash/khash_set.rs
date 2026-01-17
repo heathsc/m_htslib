@@ -44,7 +44,7 @@ impl<K> KHashSetRaw<K> {
         self.hash.free();
     }
     #[inline]
-    pub fn iter(&self) -> KIter<K> {
+    pub fn iter<'a>(&'a self) -> KIter<'a, K> {
         self.hash.keys()
     }
 }

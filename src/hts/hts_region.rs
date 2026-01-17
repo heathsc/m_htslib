@@ -9,7 +9,7 @@ use crate::{
     },
     region::{
         reg::{Region, RegionContig},
-        region_list::{RegionCoords, RegionCtg},
+        region_list::RegionCoords,
     },
 };
 
@@ -38,6 +38,14 @@ impl<'a> HtsCtgRegion<'a> {
         let coords = RegionCoords::new(start, end).expect("Bad coordinates");
         Self { contig, coords }
     }
+
+    pub fn contig(&self) -> &'a CStr {
+        self.contig
+    }
+
+    pub fn coords(&self) -> &RegionCoords {
+        &self.coords
+    }
 }
 
 #[derive(Debug)]
@@ -46,7 +54,6 @@ pub enum HtsRegion<'a> {
     All,
     Unmapped,
 }
-
 
 impl HtsRegion<'_> {
     pub fn make_htslib_region<T: IdMap + SeqId>(&self, h: &T) -> Result<HtslibRegion, HtsError> {
@@ -87,15 +94,12 @@ impl<'a> From<&'a Region> for HtsRegion<'a> {
 }
 
 impl<'a> HtsRegion<'a> {
-    pub fn new(ctg: &'a RegionCtg, coords: &RegionCoords) -> Self {
-        match ctg {
-            RegionCtg::All => Self::All,
-            RegionCtg::Unmapped => Self::Unmapped,
-            RegionCtg::Contig(c) => Self::Contig(HtsCtgRegion {
-                contig: c.as_c_str(),
-                coords: *coords,
-            }),
-        }
+    pub fn new(contig: &'a CStr, coords: &RegionCoords) -> Self {
+        let cr = HtsCtgRegion {
+            contig,
+            coords: *coords,
+        };
+        Self::Contig(cr)
     }
 
     pub fn new_unmapped() -> Self {
@@ -104,6 +108,34 @@ impl<'a> HtsRegion<'a> {
 
     pub fn new_all() -> Self {
         Self::All
+    }
+
+    pub fn hts_ctg_region(&self) -> Option<&HtsCtgRegion<'a>> {
+        if let Self::Contig(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+
+    pub fn contig(&self) -> Option<&'a CStr> {
+        self.hts_ctg_region().map(|r| r.contig())
+    }
+
+    pub fn coords(&self) -> Option<&RegionCoords> {
+        self.hts_ctg_region().map(|r| r.coords())
+    }
+
+    pub fn is_region(&self) -> bool {
+        matches!(self, Self::Contig(_))
+    }
+
+    pub fn is_unmapped(&self) -> bool {
+        matches!(self, Self::Unmapped)
+    }
+
+    pub fn is_all(&self) -> bool {
+        matches!(self, Self::All)
     }
 }
 
@@ -142,7 +174,10 @@ mod tests {
             HtsFile,
             traits::{IdMap, SeqId},
         },
-        region::{reg::{Reg, Region}, region_list::RegionCoords},
+        region::{
+            reg::{Reg, Region},
+            region_list::RegionCoords,
+        },
         sam::SamHdr,
     };
 
@@ -179,7 +214,7 @@ mod tests {
         eprintln!("{hr:?}");
         assert_eq!(hr.end, 686)
     }
-    
+
     #[test]
     fn region_test2() {
         let mut hts = HtsFile::open(c"test/realn01.sam", c"r").unwrap();
@@ -189,7 +224,7 @@ mod tests {
         let region = Region::from_reg(&reg);
         let hreg: HtsRegion = HtsRegion::from(&region);
         let hr = hreg.make_htslib_region(&hdr).unwrap();
-        
+
         eprintln!("{hr:?}");
         assert_eq!(hr.end, 200);
         assert_eq!(hr.start, 24);

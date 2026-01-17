@@ -213,7 +213,7 @@ impl<K> KHashRaw<K> {
     }
 
     #[inline]
-    pub fn keys(&self) -> KIter<K> {
+    pub fn keys<'a>(&'a self) -> KIter<'a, K> {
         KIter {
             map: self as *const Self,
             idx: 0,
@@ -229,7 +229,7 @@ impl<K> KHashRaw<K> {
         self.keys
     }
     #[inline]
-    pub fn drain(&mut self) -> KDrain<K> {
+    pub fn drain<'a>(&'a mut self) -> KDrain<'a, K> {
         KDrain {
             map: self,
             idx: 0,

@@ -557,7 +557,7 @@ impl SamHdr {
         let nul: *const i8 = ptr::null();
         let v1: Vec<_> = v
             .iter()
-            .map(|t| tv(t))
+            .map(tv)
             .collect::<Result<Vec<_>, SamError>>()?;
 
         let ret = match v.len() {

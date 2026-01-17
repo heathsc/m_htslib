@@ -94,7 +94,7 @@ pub fn feature_string() -> &'static CStr {
 /// into a Boxed slice of OCStr.  When reading from a file, entries are separated by newlines, while when
 /// reading from a string, entries are separated by commas.  Note that in the latter case, the first ':'
 /// character is skipped.
-pub fn read_lines(s: &CStr) -> Result<Box<[OCStr]>, HtsError> {
+pub fn read_lines<'a>(s: &'a CStr) -> Result<Box<[OCStr<'a>]>, HtsError> {
     let mut n: c_int = 0;
     let p = unsafe { hts_readlines(s.as_ptr(), &mut n) };
     try_make_boxed_slice(p, n)
@@ -102,7 +102,7 @@ pub fn read_lines(s: &CStr) -> Result<Box<[OCStr]>, HtsError> {
 
 ///  Parse comma-separated list from `s` or read list from a file (one entry per line) named `s`.
 /// The list is returned as a Boxed slice of OCStr
-pub fn read_list(s: &CStr, is_file: bool) -> Result<Box<[OCStr]>, HtsError> {
+pub fn read_list<'a>(s: &'a CStr, is_file: bool) -> Result<Box<[OCStr<'a>]>, HtsError> {
     let mut n: c_int = 0;
     let p = unsafe { hts_readlist(s.as_ptr(), if is_file { 1 } else { 0 }, &mut n) };
     try_make_boxed_slice(p, n)

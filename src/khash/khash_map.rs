@@ -78,7 +78,7 @@ impl<K, V> KHashMapRaw<K, V> {
         unsafe { ptr::read(self.vals.add(i as usize)) }
     }
     #[inline]
-    pub fn iter(&self) -> KIterMap<K, V> {
+    pub fn iter<'a>(&'a self) -> KIterMap<'a, K, V> {
         KIterMap {
             map: self as *const KHashMapRaw<K, V>,
             idx: 0,
@@ -86,7 +86,7 @@ impl<K, V> KHashMapRaw<K, V> {
         }
     }
     #[inline]
-    pub fn iter_mut(&mut self) -> KIterMapMut<K, V> {
+    pub fn iter_mut<'a>(&'a mut self) -> KIterMapMut<'a, K, V> {
         KIterMapMut {
             map: self as *mut KHashMapRaw<K, V>,
             idx: 0,
@@ -94,20 +94,20 @@ impl<K, V> KHashMapRaw<K, V> {
         }
     }
     #[inline]
-    pub fn drain(&mut self) -> KDrainMap<K, V> {
+    pub fn drain<'a>(&'a mut self) -> KDrainMap<'a, K, V> {
         KDrainMap {
             inner: self.iter_mut(),
         }
     }
     #[inline]
-    pub fn values(&self) -> KIterVal<K, V> {
+    pub fn values<'a>(&'a self) -> KIterVal<'a, K, V> {
         KIterVal { inner: self.iter() }
     }
 }
 
 impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
     #[inline]
-    pub fn entry(&mut self, key: K) -> Result<MapEntryMut<K, V>, KHashError> {
+    pub fn entry<'a>(&'a mut self, key: K) -> Result<MapEntryMut<'a, K, V>, KHashError> {
         self.hash
             ._find_entry(&key, Some(&mut self.vals))
             .map(|idx| MapEntryMut {
@@ -118,7 +118,7 @@ impl<K: KHashFunc + PartialEq, V> KHashMapRaw<K, V> {
     }
 
     #[inline]
-    pub fn find(&self, key: &K) -> Option<MapEntry<K, V>> {
+    pub fn find<'a>(&'a self, key: &K) -> Option<MapEntry<'a, K, V>> {
         self._find(key).map(|idx| MapEntry { map: self, idx })
     }
     #[inline]

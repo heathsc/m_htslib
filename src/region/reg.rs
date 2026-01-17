@@ -1,9 +1,10 @@
-use std::{borrow::Borrow, ffi::CStr, fmt, num::NonZero, ops::Deref, sync::LazyLock};
+use std::{borrow::Borrow, ffi::CStr, fmt, hash::Hash, num::NonZero, ops::Deref, rc::Rc, sync::{Arc, LazyLock}};
 
 use regex::bytes::Regex;
 
 use crate::{
     HtsError,
+    hts::HtsPos,
     int_utils::{parse_decimal, skip_space},
 };
 
@@ -33,16 +34,34 @@ static RE_CONTIG2: LazyLock<Regex> = LazyLock::new(|| {
 /// Note that this is similar to Box<CStr> except we box a u8 slice rather than a c_char slice.
 /// This is just to make it more transparent moving between RegionContig and RegContig, while
 /// converting to CStr is cheap as u8 and c_char have the same binary representation.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialOrd, Ord)]
 pub struct RegionContig {
     inner: Box<[u8]>,
+}
+
+impl PartialEq for RegionContig {
+    fn eq(&self, other: &Self) -> bool {
+        let l = self.inner.len();
+        assert!(l>0);
+        self.inner[..l-1] == other.inner[..l-1]
+    }
+}
+
+impl Hash for RegionContig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let l = self.inner.len();
+        assert!(l>0);
+        self.inner[..l-1].hash(state)
+    }
 }
 
 impl Deref for RegionContig {
     type Target = RegContig;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self.inner.as_ref() as *const [u8] as *const Self::Target) }
+        let l = self.inner.len();
+        assert!(l>0);
+        unsafe { &*(&self.to_bytes()[0..l-1] as *const [u8] as *const Self::Target) }
     }
 }
 
@@ -54,7 +73,25 @@ impl AsRef<RegContig> for RegionContig {
 
 impl Borrow<RegContig> for RegionContig {
     fn borrow(&self) -> &RegContig {
-        self
+        self.deref()
+    }
+}
+
+impl Borrow<RegContig> for Box<RegionContig> {
+    fn borrow(&self) -> &RegContig {
+        self.deref()
+    }
+}
+
+impl Borrow<RegContig> for Rc<RegionContig> {
+    fn borrow(&self) -> &RegContig {
+        self.deref()
+    }
+}
+ 
+impl Borrow<RegContig> for Arc<RegionContig> {
+    fn borrow(&self) -> &RegContig {
+        self.deref()
     }
 }
 
@@ -91,7 +128,7 @@ impl fmt::Display for RegionContig {
 /// An instance can be created using `RegContig::from_u8_slice`. Note that this
 /// is the only way to directly create a RegContig instance, and because we are using a regexp to
 /// parse the input, we can be assured that the invariants above hold.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct RegContig {
     inner: [u8],
@@ -102,7 +139,7 @@ impl ToOwned for RegContig {
 
     // We need to clone the slice to a Box<[u8]>, giving enough room for the terminating nul
     fn to_owned(&self) -> Self::Owned {
-        let bytes = self.as_bytes();
+        let bytes = self.to_bytes();
         let capacity = bytes.len().checked_add(1).unwrap();
         let mut buffer = Vec::with_capacity(capacity);
         buffer.extend(bytes);
@@ -111,6 +148,20 @@ impl ToOwned for RegContig {
         Self::Owned {
             inner: buffer.into_boxed_slice(),
         }
+    }
+}
+
+impl Deref for RegContig {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(self.to_bytes() as *const Self::Target) }
+    }
+}
+
+impl AsRef<[u8]> for RegContig {
+    fn as_ref(&self) -> &[u8] {
+        self
     }
 }
 
@@ -133,18 +184,18 @@ impl RegContig {
     pub fn as_str(&self) -> &str {
         // This is safe because every contig name has to match [RE_CONTIG1] or [RE_CONTIG2],
         // so we know that they must only contain valid 7 bit ascii which is also valid utf8
-        unsafe { str::from_utf8_unchecked(self.as_bytes()) }
+        unsafe { str::from_utf8_unchecked(self.to_bytes()) }
     }
 
     #[inline]
-    pub const fn as_bytes(&self) -> &[u8] {
+    pub const fn to_bytes(&self) -> &[u8] {
         let p = &raw const self.inner;
         unsafe { &*p }
     }
 
     #[inline]
     pub const fn len(&self) -> usize {
-        self.as_bytes().len()
+        self.to_bytes().len()
     }
 
     #[inline]
@@ -229,6 +280,38 @@ impl Region {
             Reg::All => Self::All,
         }
     }
+
+    pub fn to_reg<'a>(&'a self) -> Reg<'a> {
+        match self {
+            Self::Chrom(a) => Reg::Chrom(a.as_ref()),
+            Self::Open(a, x) => Reg::Open(a.as_ref(), *x),
+            Self::Closed(a, x, y) => Reg::Closed(a.as_ref(), *x, *y),
+            Self::Unmapped => Reg::Unmapped,
+            Self::All => Reg::All,
+        }
+    }
+}
+
+impl RegCtgName for Region {
+    #[inline]
+    fn contig_name(&self) -> &str {
+        match self {
+            Self::Chrom(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.as_str(),
+            Self::All => ".",
+            Self::Unmapped => "*",
+        }
+    }
+}
+
+impl RegCoords for Region {
+    #[inline]
+    fn coords(&self) -> (Option<HtsPos>, Option<HtsPos>) {
+        match self {
+            Self::Closed(_, a, b) => (Some(*a as HtsPos), Some(b.get() as HtsPos)),
+            Self::Open(_, a) => (Some(*a as HtsPos), None),
+            _ => (None, None),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -301,6 +384,16 @@ impl<'a> Reg<'a> {
         }
     }
 
+    #[inline]
+    pub fn to_owned(&self) -> Region {
+        Region::from_reg(self)
+    }
+
+    #[inline]
+    pub fn to_region(&self) -> Region {
+        Region::from_reg(self)
+    }
+
     fn parse_range(s: &[u8], ctg: &'a RegContig) -> Result<Self, HtsError> {
         let mk_nz = |i: i64| unsafe { NonZero::new_unchecked(i as usize) };
 
@@ -366,6 +459,17 @@ impl RegCtgName for Reg<'_> {
     }
 }
 
+impl RegCoords for Reg<'_> {
+    #[inline]
+    fn coords(&self) -> (Option<HtsPos>, Option<HtsPos>) {
+        match self {
+            Self::Closed(_, a, b) => (Some(*a as HtsPos), Some(b.get() as HtsPos)),
+            Self::Open(_, a) => (Some(*a as HtsPos), None),
+            _ => (None, None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(unused)]
@@ -401,6 +505,7 @@ mod tests {
         assert_eq!(reg.contig_name(), "chr5");
         let y: NonZero<usize> = NonZero::new(1430000).unwrap();
         assert!(matches!(reg, Reg::Closed(_, 1199999, y)));
+        assert!(matches!(reg.coords(), (Some(1199999), Some(1430000))));
 
         let reg = Reg::try_from("chr7.1").unwrap();
         eprintln!("{reg}");
