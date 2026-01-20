@@ -76,4 +76,6 @@ pub enum HtsError {
     TidError(libc::c_int),
     #[error("Unknown contig: {0:?}")]
     UnknownContig(CString),
+    #[error("RegionList Argument not normalized")]
+    RegionListArgumentNotNormalized,
 }

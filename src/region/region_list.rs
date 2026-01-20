@@ -73,10 +73,16 @@ impl RegionCoords {
         self.start == 0 && self.end.is_none()
     }
 
-    pub fn check_overlap(&self, other: &Self) -> bool {
+    pub fn overlaps(&self, other: &Self) -> bool {
         if self > other {
-            return other.check_overlap(self);
+            other._overlaps(self)
+        } else {
+            self._overlaps(other)
         }
+    }
+
+    /// Note: self <= other
+    fn _overlaps(&self, other: &Self) -> bool {
         if let Some(x) = self.end.as_ref()
             && other.start > x.get()
         {
@@ -122,6 +128,7 @@ impl RegionCoords {
 const CRL_UNSORTED: u8 = 1;
 const CRL_UNNORMALIZED: u8 = 2;
 
+#[derive(Clone)]
 pub struct ContigRegList {
     ctg: Arc<RegionContig>,
     regions: Option<Vec<RegionCoords>>,
@@ -146,7 +153,7 @@ impl ContigRegList {
         self.regions = None;
         self.flags = 0;
     }
-    
+
     pub fn normalize(&mut self) {
         if self.flags & CRL_UNSORTED != 0 {
             self.sort()
@@ -161,7 +168,7 @@ impl ContigRegList {
             // We have already checked that rc is not empty, so it is safe to unwrap the first element
             let mut pending = it.next().unwrap();
             for c in it {
-                if pending.check_overlap(&c) {
+                if pending.overlaps(&c) {
                     pending.end = match (pending.end, c.end) {
                         (Some(x), Some(y)) => Some(x.max(y)),
                         _ => None,
@@ -194,7 +201,7 @@ impl ContigRegList {
                 if r != &coords {
                     if r > &coords {
                         self.flags |= CRL_UNSORTED | CRL_UNNORMALIZED
-                    } else if r.check_overlap(&coords) {
+                    } else if r.overlaps(&coords) {
                         self.flags |= CRL_UNNORMALIZED
                     }
                     reg_vec.push(coords);
@@ -205,13 +212,75 @@ impl ContigRegList {
         }
         self.flags & (CRL_UNSORTED | CRL_UNNORMALIZED) != 0
     }
+
+    pub fn intersect(&mut self, other: &Self) -> Result<(), HtsError> {
+        if other.flags & CRL_UNNORMALIZED == 0 {
+            if self.flags & CRL_UNNORMALIZED != 0 {
+                self.normalize();
+            }
+            if self.regions.is_none() {
+                // self has entire contig, so we just clone from other
+                *self = other.clone()
+            } else if let Some(reg2) = other.regions.as_deref() {
+                // This is safe as we already checked above that self.regions is not none
+                let mut reg1 = self.regions.take().unwrap();
+                let mlen = reg1.len().min(reg2.len());
+                let mut reg1_itr = reg1.drain(..);
+                let mut reg2_itr = reg2.iter();
+
+                //  Get intersect between reg1 and reg2
+
+                // Output vector for intersect
+                let mut out_vec = Vec::with_capacity(mlen);
+
+                let mut curr_reg1 = reg1_itr.next();
+                let mut curr_reg2 = None;
+                while let Some(r1) = curr_reg1.as_ref() {
+                    if let Some(r2) = curr_reg2.take().or_else(|| reg2_itr.next()) {
+                        if r1.overlaps(r2) {
+                            let start = r1.start.max(r2.start);
+                            if match (r1.end(), r2.end()) {
+                                (Some(x), Some(y)) => x <= y,
+                                (None, Some(_)) => false,
+                                _ => true,
+                            } {
+                                // r1 ends at or before r2
+                                out_vec.push(RegionCoords { start, end: r1.end });
+                                // As both reg1 and reg2 are normalized we know that the next rgion in reg2 will not
+                                // overlap r1, so we get the next region from reg1, but we keep r2 in case the next
+                                // from reg1 also overlaps with it
+                                curr_reg1 = reg1_itr.next();
+                                curr_reg2 = Some(r2);
+                            } else {
+                                // r1 ends after r2
+                                out_vec.push(RegionCoords { start, end: r2.end });
+                                // We keep r1 for the next comparison, and get the next region from reg2
+                            }
+                        } else if r1 < r2 {
+                            // No overlap and r1 is before r2, so get next entry from reg1
+                            curr_reg1 = reg1_itr.next();
+                            curr_reg2 = Some(r2)
+                        }
+                        // if r1 > r2 (and doesn't overlap with r1) then we keep r1 and get the next rgion from r2
+                    } else {
+                        break;
+                    }
+                }
+                self.regions = Some(out_vec);
+            }
+
+            Ok(())
+        } else {
+            Err(HtsError::RegionListArgumentNotNormalized)
+        }
+    }
 }
 
 const RL_ALL: u8 = 1;
 const RL_UNMAPPED: u8 = 2;
 const RL_UNNORMALIZED: u8 = 4;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RegionList {
     ctg_map: HashMap<Arc<RegionContig>, usize>,
     regions: Vec<ContigRegList>,
@@ -308,6 +377,35 @@ impl RegionList {
             self.flags &= 3
         }
     }
+
+    pub fn intersect(&mut self, other: &Self) -> Result<(), HtsError> {
+        if other.flags & RL_UNNORMALIZED == 0 {
+            self.normalize();
+            if self.flags | other.flags & RL_ALL == 0 {
+                self.flags |= other.flags & RL_UNMAPPED;
+                let mut new_regions = Vec::new();
+                let mut new_map = HashMap::new();
+                for mut reg in self.regions.drain(..) {
+                    if let Some(ix) = other.ctg_map.get(reg.ctg.as_ref()) {
+                        reg.intersect(&other.regions[*ix])?;
+                        let key = reg.ctg.clone();
+                        let val = new_regions.len();
+                        new_map.insert(key, val);
+                        new_regions.push(reg);
+                    }
+                }
+                self.ctg_map = new_map;
+                self.regions = new_regions;
+            } else if self.flags & RL_ALL != 0 {
+                *self = other.clone()
+            }
+            // The remaining possibility is other.flags contains RL_ALL. In this case we do nothing
+
+            Ok(())
+        } else {
+            Err(HtsError::RegionListArgumentNotNormalized)
+        }
+    }
 }
 
 pub struct RegionIter<'a> {
@@ -401,7 +499,7 @@ mod tests {
         assert_eq!(ctg, c"chr5");
         assert_eq!(c.start(), 1199999);
     }
-    
+
     #[test]
     fn test_reg_list1() {
         let mut rl = RegionList::new();
@@ -419,11 +517,47 @@ mod tests {
         let ctg = r.contig().expect("Not a region");
         assert_eq!(ctg, c"chr5");
         assert_eq!(c.end(), Some(2500));
-        
+
         let r = rl.regions().nth(1).unwrap();
         let c = r.coords().expect("Not a region");
         let ctg = r.contig().expect("Not a region");
         assert_eq!(ctg, c"chr5");
         assert_eq!(c.start(), 1199999);
+    }
+
+    #[test]
+    fn test_reg_list_intersect() {
+        let mut r1 = RegionList::new();
+        let reg = Reg::try_from("chr5:3000-5000").unwrap();
+        r1.add_reg(&reg);
+        let reg = Reg::try_from("chr5:1000-2000").unwrap();
+        r1.add_reg(&reg);
+        let reg = Reg::try_from("chr3:1000-20000").unwrap();
+        r1.add_reg(&reg);
+        let reg = Reg::try_from("chr4:1M-1.5M").unwrap();
+        r1.add_reg(&reg);
+        let reg = Reg::try_from("chr8:15.1k-").unwrap();
+        r1.add_reg(&reg);
+
+        let mut r2 = RegionList::new();
+        let reg = Reg::try_from("chr3").unwrap();
+        r2.add_reg(&reg);
+        let reg = Reg::try_from("chr5:4000-6000").unwrap();
+        r2.add_reg(&reg);
+        let reg = Reg::try_from("chr5:500-1200").unwrap();
+        r2.add_reg(&reg);
+        let reg = Reg::try_from("chr8:15k-17k").unwrap();
+        r2.add_reg(&reg);
+        let reg = Reg::try_from("chr5:3100-3200").unwrap();
+        r2.add_reg(&reg);
+
+        r2.normalize();
+        r1.intersect(&r2).expect("Error in intersect");
+
+        let r = r1.regions().nth(4).expect("Not enough regions in intersect");
+        let c = r.coords().expect("Not a region");
+        let ctg = r.contig().expect("Not a region");
+        assert_eq!(ctg, c"chr8");
+        assert_eq!(c.start(), 15099);
     }
 }
