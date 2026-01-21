@@ -11,10 +11,7 @@ use super::{
     traits::RegCoords,
 };
 
-use crate::{
-    HtsError,
-    hts::{HtsPos, hts_region::HtsRegion},
-};
+use crate::{HtsError, hts::HtsPos};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct RegionCoords {
@@ -324,7 +321,7 @@ impl RegionList {
                     }
                 }
             }
-            Reg::Chrom(c) => {
+            Reg::Contig(c) => {
                 let ctg = *c;
                 if self.flags & RL_ALL == 0 {
                     let _ = self.add_or_lookup_ctg(ctg, true);
@@ -432,16 +429,16 @@ impl<'a> RegionIter<'a> {
 }
 
 impl<'a> Iterator for RegionIter<'a> {
-    type Item = HtsRegion<'a>;
+    type Item = Reg<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.flags & RL_ALL != 0 {
             self.flags = 0;
-            return Some(HtsRegion::new_all());
+            return Some(Reg::new_all());
         }
         loop {
             if let Some((ctg, rc)) = self.curr_ctg {
-                let hr = HtsRegion::new(ctg, &rc[0]);
+                let hr = Reg::new_region(ctg, Some(&rc[0])).expect("Bad region");
                 if rc.len() > 1 {
                     self.curr_ctg = Some((ctg, &rc[1..]));
                 } else {
@@ -468,7 +465,7 @@ impl<'a> Iterator for RegionIter<'a> {
         }
         if self.flags & RL_UNMAPPED != 0 {
             self.flags = 0;
-            Some(HtsRegion::new_unmapped())
+            Some(Reg::new_unmapped())
         } else {
             None
         }
@@ -481,7 +478,7 @@ mod tests {
 
     use super::*;
 
-    use crate::region::reg::Reg;
+    use crate::region::{RegCtgName, reg::Reg};
 
     #[test]
     fn test_reg_list() {
@@ -494,10 +491,10 @@ mod tests {
         rl.add_reg(&reg);
 
         let r = rl.regions().nth(1).unwrap();
-        let c = r.coords().expect("Not a region");
-        let ctg = r.contig().expect("Not a region");
-        assert_eq!(ctg, c"chr5");
-        assert_eq!(c.start(), 1199999);
+        let (start, stop) = r.coords();
+        let ctg = r.contig_name();
+        assert_eq!(ctg, "chr5");
+        assert_eq!(start, Some(1199999));
     }
 
     #[test]
@@ -513,16 +510,16 @@ mod tests {
         rl.add_reg(&reg);
 
         let r = rl.regions().next().unwrap();
-        let c = r.coords().expect("Not a region");
-        let ctg = r.contig().expect("Not a region");
-        assert_eq!(ctg, c"chr5");
-        assert_eq!(c.end(), Some(2500));
+        let (start, stop) = r.coords();
+        let ctg = r.contig_name();
+        assert_eq!(ctg, "chr5");
+        assert_eq!(stop, Some(2500));
 
         let r = rl.regions().nth(1).unwrap();
-        let c = r.coords().expect("Not a region");
-        let ctg = r.contig().expect("Not a region");
-        assert_eq!(ctg, c"chr5");
-        assert_eq!(c.start(), 1199999);
+        let (start, stop) = r.coords();
+        let ctg = r.contig_name();
+        assert_eq!(ctg, "chr5");
+        assert_eq!(start, Some(1199999));
     }
 
     #[test]
@@ -554,10 +551,14 @@ mod tests {
         r2.normalize();
         r1.intersect(&r2).expect("Error in intersect");
 
-        let r = r1.regions().nth(4).expect("Not enough regions in intersect");
-        let c = r.coords().expect("Not a region");
-        let ctg = r.contig().expect("Not a region");
-        assert_eq!(ctg, c"chr8");
-        assert_eq!(c.start(), 15099);
+        let r = r1
+            .regions()
+            .nth(4)
+            .expect("Not enough regions in intersect");
+        
+        let (start, stop) = r.coords();
+        let ctg = r.contig_name();
+        assert_eq!(ctg, "chr8");
+        assert_eq!(start, Some(15099));
     }
 }

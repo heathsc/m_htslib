@@ -12,7 +12,7 @@ use crate::{
     bgzf::BgzfRaw,
     hts::{
         HtsPos,
-        hts_region::HtslibRegion,
+        hts_region::HtsRegion,
         traits::{HdrType, IdMap, ReadRec, ReadRecIter},
     },
 };
@@ -124,8 +124,8 @@ impl Drop for HtsItr {
 
 struct HtsRegionSubIter<F, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     mk_hts_iter: F,
     reg_iter: I,
@@ -134,8 +134,8 @@ where
 
 impl<F, I> HtsRegionSubIter<F, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     fn make(reg_iter: I, mk_iter: F) -> Self {
         Self {
@@ -148,8 +148,8 @@ where
 
 impl<F, I> Iterator for HtsRegionSubIter<F, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     type Item = HtsItr;
 
@@ -170,15 +170,15 @@ where
 
 impl<F, I> FusedIterator for HtsRegionSubIter<F, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
 }
 
 pub struct HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     sub_iter: Option<HtsRegionSubIter<F, I>>,
     iter: HtsRegionIter<R>,
@@ -191,8 +191,8 @@ pub struct HtsRegionIter<R> {
 
 impl<F, R, I> Deref for HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     type Target = HtsRegionIter<R>;
 
@@ -203,8 +203,8 @@ where
 
 impl<F, R, I> DerefMut for HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.iter
@@ -213,8 +213,8 @@ where
 
 impl<F, R, I> HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
     R: ReadRecIter,
 {
     pub fn make_regions_iter(reg_iter: I, mk_hts_iter: F, read_rec: R) -> Self {
@@ -239,8 +239,8 @@ impl<R> HtsRegionIter<R>
 where
     R: ReadRecIter,
 {
-    pub fn make_region_iter<F: Fn(&HtslibRegion) -> Option<HtsItr>>(
-        region: HtslibRegion,
+    pub fn make_region_iter<F: Fn(&HtsRegion) -> Option<HtsItr>>(
+        region: HtsRegion,
         mk_hts_iter: F,
         read_rec: R,
     ) -> Self {
@@ -253,8 +253,8 @@ where
 
 impl<F, R, I> ReadRec for HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
     R: ReadRecIter,
 {
     type Err = R::Err;
@@ -326,8 +326,8 @@ where
 
 impl<F, R, I> HdrType for HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
     R: ReadRecIter + HdrType,
 {
     fn hdr_type(&self) -> super::traits::HtsHdrType {
@@ -337,8 +337,8 @@ where
 
 impl<F, R, I> IdMap for HtsRegionsIter<F, R, I>
 where
-    F: Fn(&HtslibRegion) -> Option<HtsItr>,
-    I: Iterator<Item = HtslibRegion>,
+    F: Fn(&HtsRegion) -> Option<HtsItr>,
+    I: Iterator<Item = HtsRegion>,
     R: ReadRecIter + IdMap,
 {
     fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {

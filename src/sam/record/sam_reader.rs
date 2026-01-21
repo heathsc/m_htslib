@@ -9,10 +9,11 @@ use libc::{c_char, c_int, c_void};
 use crate::{
     HtsError, SamError,
     hts::{
-        HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion, HtslibRegion,
+        HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion,
         hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionsIter, hts_itr_next},
         traits::{HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
     },
+    region::Reg,
     sam::{SamHdr, SamHdrRaw},
 };
 
@@ -47,11 +48,11 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
 }
 
 impl SamReader<'_, '_, '_> {
-    pub fn region_iter(mut self, region: &HtsRegion) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
+    pub fn region_iter(mut self, region: &Reg) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
         self.load_idx()?;
         let idx = self.idx.take().unwrap();
         let reg = region.make_htslib_region(self.hdr).expect("Invalid region");
-        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+        let f = move |r: &HtsRegion| -> Option<HtsItr> {
             HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
         };
         Ok(HtsRegionIter::make_region_iter(reg, f, self))
@@ -63,12 +64,12 @@ impl SamReader<'_, '_, '_> {
     ) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> 
     where 
         I: Iterator<Item = T>,
-        T: Borrow<HtsRegion<'a>>,
+        T: Borrow<Reg<'a>>,
     {
         self.load_idx()?;
         let idx = self.idx.take().unwrap();
         let reg_iter = regions.map(|r| r.borrow().make_htslib_region(self.hdr).expect("Invalid region"));
-        let f = move |r: &HtslibRegion| -> Option<HtsItr> {
+        let f = move |r: &HtsRegion| -> Option<HtsItr> {
             HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
         };
         
@@ -211,10 +212,8 @@ mod tests {
         let mut rec = BamRec::new();
         let mut reader = SamReader::new(&mut h, &hdr);
         let reg = Reg::from_u8_slice(b"ref2:25-").unwrap();
-        let region = Region::from_reg(&reg);
-        let hreg: HtsRegion = HtsRegion::from(&region);
 
-        let mut itr = reader.region_iter(&hreg).unwrap();
+        let mut itr = reader.region_iter(&reg).unwrap();
 
         let mut n = 0;
 
@@ -235,15 +234,12 @@ mod tests {
 
         let mut rec = BamRec::new();
         let mut reader = SamReader::new(&mut h, &hdr);
-        let reg = Reg::from_u8_slice(b"ref1").unwrap();
-        let region1 = Region::from_reg(&reg);
-        let reg = Reg::from_u8_slice(b"ref2:25-").unwrap();
-        let region2 = Region::from_reg(&reg);
-        let hreg1: HtsRegion = HtsRegion::from(&region1);
-        let hreg2: HtsRegion = HtsRegion::from(&region2);
-        let hregs = [hreg1, hreg2];
+        let reg1 = Reg::from_u8_slice(b"ref1").unwrap();
+        let reg2 = Reg::from_u8_slice(b"ref2:25-").unwrap();
 
-        let mut itr = reader.regions_iter(hregs.iter()).unwrap();
+        let regs = [reg1, reg2];
+
+        let mut itr = reader.regions_iter(regs.iter()).unwrap();
 
         let mut n = 0;
 
