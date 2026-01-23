@@ -1,9 +1,5 @@
 use std::{
-    cmp::{Ord, Ordering},
-    collections::HashMap,
-    ffi::CStr,
-    num::NonZero,
-    sync::Arc,
+    cmp::{Ord, Ordering}, collections::HashMap, ffi::CStr, iter::FusedIterator, num::NonZero, sync::Arc
 };
 
 use super::{
@@ -125,7 +121,7 @@ impl RegionCoords {
 const CRL_UNSORTED: u8 = 1;
 const CRL_UNNORMALIZED: u8 = 2;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ContigRegList {
     ctg: Arc<RegionContig>,
     regions: Option<Vec<RegionCoords>>,
@@ -271,16 +267,20 @@ impl ContigRegList {
             Err(HtsError::RegionListArgumentNotNormalized)
         }
     }
+
+    pub fn regions(&self) -> Option<&[RegionCoords]> {
+        self.regions.as_deref()
+    }
 }
 
 const RL_ALL: u8 = 1;
 const RL_UNMAPPED: u8 = 2;
 const RL_UNNORMALIZED: u8 = 4;
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RegionList {
-    ctg_map: HashMap<Arc<RegionContig>, usize>,
-    regions: Vec<ContigRegList>,
+    ctg_map: HashMap<Arc<RegionContig>, ContigRegList>,
+    contigs: Vec<Arc<RegionContig>>,
     flags: u8,
 }
 
@@ -304,8 +304,8 @@ impl RegionList {
         match reg {
             Reg::All => {
                 self.flags = RL_ALL;
-                self.regions.clear();
                 self.ctg_map.clear();
+                self.contigs.clear();
             }
             Reg::Unmapped => {
                 if self.flags & RL_ALL == 0 {
@@ -331,20 +331,20 @@ impl RegionList {
     }
 
     fn add_or_lookup_ctg(&mut self, ctg: &RegContig, entire_contig: bool) -> &mut ContigRegList {
-        let ix = if let Some(x) = self.ctg_map.get(ctg) {
+        if let Some(c) = self.ctg_map.get_mut(ctg) {
             if entire_contig {
-                self.regions[*x].make_entire()
+                c.make_entire();
             }
-            *x
         } else {
             let c = Arc::new(ctg.to_owned());
             let key = c.clone();
-            let val = self.regions.len();
+            let ctg1 = c.clone();
+            let val = ContigRegList::new(c, entire_contig);
             self.ctg_map.insert(key, val);
-            self.regions.push(ContigRegList::new(c, entire_contig));
-            val
+            self.contigs.push(ctg1);
         };
-        &mut self.regions[ix]
+
+        self.ctg_map.get_mut(ctg).unwrap()
     }
 
     pub fn regions<'a>(&'a mut self) -> RegionIter<'a> {
@@ -352,17 +352,24 @@ impl RegionList {
     }
 
     pub fn contigs(&self) -> impl Iterator<Item = &CStr> {
-        self.ctg_map.keys().map(|k| k.as_cstr())
+        self.contigs.iter().map(|k| k.as_cstr())
+    }
+
+    pub fn contig_reg_lists<'a>(&'a self) -> RlIter<'a> {
+        RlIter::from_region_list(self)
+    }
+
+    pub fn contig_reg_lists_mut<'a>(&'a mut self) -> RlIterMut<'a> {
+        RlIterMut::from_region_list(self)
     }
 
     pub fn normalize(&mut self) {
         if self.flags & RL_ALL != 0 {
-            self.regions.clear();
             self.ctg_map.clear();
         }
 
         if self.flags & (RL_ALL | RL_UNNORMALIZED) == RL_UNNORMALIZED {
-            for crl in self.regions.iter_mut() {
+            for crl in self.ctg_map.values_mut() {
                 crl.normalize()
             }
         }
@@ -380,19 +387,19 @@ impl RegionList {
             self.normalize();
             if self.flags | other.flags & RL_ALL == 0 {
                 self.flags |= other.flags & RL_UNMAPPED;
-                let mut new_regions = Vec::new();
                 let mut new_map = HashMap::new();
-                for mut reg in self.regions.drain(..) {
-                    if let Some(ix) = other.ctg_map.get(reg.ctg.as_ref()) {
-                        reg.intersect(&other.regions[*ix])?;
+                let mut new_contigs = Vec::new();
+                for ctg in self.contigs.iter() {
+                    if let Some(reg1) = other.ctg_map.get(ctg.as_ref()) {
+                        let mut reg = self.ctg_map.remove(ctg).unwrap();
+                        reg.intersect(reg1)?;
                         let key = reg.ctg.clone();
-                        let val = new_regions.len();
-                        new_map.insert(key, val);
-                        new_regions.push(reg);
+                        new_contigs.push(reg.ctg.clone());
+                        new_map.insert(key, reg);
                     }
                 }
                 self.ctg_map = new_map;
-                self.regions = new_regions;
+                self.contigs = new_contigs;
             } else if self.flags & RL_ALL != 0 {
                 *self = other.clone()
             }
@@ -405,18 +412,99 @@ impl RegionList {
     }
 }
 
+pub struct RlIter<'a> {
+    hash: &'a HashMap<Arc<RegionContig>, ContigRegList>,
+    contigs: &'a [Arc<RegionContig>],
+}
+
+impl<'a> RlIter<'a> {
+    fn from_region_list(rl: &'a RegionList) -> Self {
+        Self {
+            hash: &rl.ctg_map,
+            contigs: &rl.contigs,
+        }
+    }
+}
+
+impl<'a> Iterator for RlIter<'a> {
+    type Item = (&'a CStr, &'a ContigRegList);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ctg) = self.contigs.first() {
+            self.contigs = &self.contigs[1..];
+            self.hash.get(ctg).map(|r| (ctg.as_cstr(), r))
+        } else {
+            None
+        }
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = self.contigs.len();
+        (l, Some(l))
+    }
+}
+
+impl<'a> ExactSizeIterator for RlIter<'a> {
+    fn len(&self) -> usize {
+        self.contigs.len()
+    }
+}
+
+impl <'a> FusedIterator for RlIter<'a> {}
+
+pub struct RlIterMut<'a> {
+    hash: &'a mut HashMap<Arc<RegionContig>, ContigRegList>,
+    contigs: &'a [Arc<RegionContig>],
+}
+
+impl<'a> RlIterMut<'a> {
+    fn from_region_list(rl: &'a mut RegionList) -> Self {
+        Self {
+            hash: &mut rl.ctg_map,
+            contigs: &rl.contigs,
+        }
+    }
+}
+
+impl<'a> Iterator for RlIterMut<'a> {
+    type Item = (&'a CStr, &'a mut ContigRegList);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ctg) = self.contigs.first() {
+            self.contigs = &self.contigs[1..];
+            let x = self.hash.get_mut(ctg).unwrap();
+            let r = x as *mut ContigRegList;
+            Some(unsafe { (ctg.as_cstr(), &mut (*r)) })
+        } else {
+            None
+        }
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = self.contigs.len();
+        (l, Some(l))
+    }
+}
+
+impl<'a> ExactSizeIterator for RlIterMut<'a> {
+    fn len(&self) -> usize {
+        self.contigs.len()
+    }
+}
+
+impl <'a> FusedIterator for RlIterMut<'a> {}
+
 pub struct RegionIter<'a> {
-    inner: Option<&'a [ContigRegList]>,
-    curr_ctg: Option<(&'a CStr, &'a [RegionCoords])>,
+    inner: Option<RlIter<'a>>,
+    curr_ctg: Option<(&'a CStr, Option<&'a [RegionCoords]>)>,
     flags: u8,
 }
 
 impl<'a> RegionIter<'a> {
     fn make(rl: &'a mut RegionList) -> Self {
         rl.normalize();
-
-        let inner: Option<&[ContigRegList]> = if rl.flags & RL_ALL == 0 && !rl.regions.is_empty() {
-            Some(&rl.regions)
+        let inner = if rl.flags & RL_ALL == 0 && !rl.ctg_map.is_empty() {
+            Some(RlIter::from_region_list(rl))
         } else {
             None
         };
@@ -438,30 +526,27 @@ impl<'a> Iterator for RegionIter<'a> {
         }
         loop {
             if let Some((ctg, rc)) = self.curr_ctg {
-                let hr = Reg::new_region(ctg, Some(&rc[0])).expect("Bad region");
-                if rc.len() > 1 {
-                    self.curr_ctg = Some((ctg, &rc[1..]));
+                if let Some(r) = rc {
+                    let hr = Reg::new_region(ctg, Some(&r[0])).expect("Bad region");
+                    if r.len() > 1 {
+                        self.curr_ctg = Some((ctg, Some(&r[1..])));
+                    } else {
+                        self.curr_ctg = None;
+                    }
+                    return Some(hr);
                 } else {
                     self.curr_ctg = None;
+                    return Some(Reg::new_region(ctg, None).unwrap());
                 }
-                return Some(hr);
-            } else if let Some(v) = self.inner {
-                let crl = &v[0];
-                if v.len() > 1 {
-                    self.inner = Some(&v[1..]);
+            } else if let Some(v) = self.inner.as_mut() {
+                if let Some((ctg, crl)) = v.next() {
+                    self.curr_ctg = Some((ctg, crl.regions.as_deref()))
                 } else {
-                    self.inner = None;
-                }
-                if let Some(v1) = &crl.regions
-                    && !v1.is_empty()
-                {
-                    let ctg = crl.ctg.as_cstr();
-                    let rc: &[RegionCoords] = v1;
-                    self.curr_ctg = Some((ctg, rc))
+                    self.inner = None
                 }
             } else {
                 break;
-            }
+            };
         }
         if self.flags & RL_UNMAPPED != 0 {
             self.flags = 0;
@@ -469,6 +554,14 @@ impl<'a> Iterator for RegionIter<'a> {
         } else {
             None
         }
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let lower = match self.inner.as_ref() {
+            Some(it) => it.len() + if self.flags & RL_UNMAPPED == 0 { 0 } else { 1 },
+            None => if self.flags & (RL_ALL | RL_UNMAPPED) == 0 { 0 } else { 1 },
+        };
+        (lower, None)
     }
 }
 
@@ -508,6 +601,8 @@ mod tests {
         rl.add_reg(&reg);
         let reg = Reg::try_from(b"chr5:1700-2500").unwrap();
         rl.add_reg(&reg);
+
+        eprintln!("OookOook {rl:?}");
 
         let r = rl.regions().next().unwrap();
         let (start, stop) = r.coords();
@@ -555,10 +650,32 @@ mod tests {
             .regions()
             .nth(4)
             .expect("Not enough regions in intersect");
-        
+
         let (start, stop) = r.coords();
         let ctg = r.contig_name();
         assert_eq!(ctg, "chr8");
         assert_eq!(start, Some(15099));
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut rl = RegionList::new();
+        let reg = Reg::try_from("chr5:1.2M-1.43M").unwrap();
+        rl.add_reg(&reg);
+        let reg = Reg::try_from(b"chr5:1000-2000").unwrap();
+        rl.add_reg(&reg);
+        let reg = Reg::try_from("chr7:252654").unwrap();
+        rl.add_reg(&reg);
+
+        assert_eq!(rl.regions().count(), 3);
+
+        for (ctg, r) in rl.contig_reg_lists_mut() {
+            r.regions = None;
+        }
+
+        assert_eq!(rl.regions().count(), 2);
+        
+        rl.add_reg(&Reg::new_unmapped());
+        assert_eq!(rl.regions().count(), 3);
     }
 }
