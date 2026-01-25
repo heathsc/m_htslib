@@ -348,7 +348,8 @@ impl RegionList {
         self.ctg_map.get_mut(ctg).unwrap()
     }
 
-    pub fn regions<'a>(&'a mut self) -> RegionIter<'a> {
+    pub fn regions<'a>(&'a self) -> RegionIter<'a> {
+        assert_eq!(self.flags & RL_UNNORMALIZED, 0, "RegionList must be normalized before calling regions()");
         RegionIter::make(self)
     }
 
@@ -364,6 +365,18 @@ impl RegionList {
         RlIterMut::from_region_list(self)
     }
 
+    pub fn is_all_regions(&self) -> bool {
+        self.flags & RL_ALL != 0
+    }
+    
+    pub fn has_unmapped(&self) -> bool {
+        self.flags & RL_UNMAPPED != 0
+    }
+    
+    pub fn has_ctg_rgions(&self) -> bool {
+        !self.ctg_map.is_empty()
+    }
+    
     pub fn normalize(&mut self) {
         if self.flags & RL_ALL != 0 {
             self.ctg_map.clear();
@@ -482,8 +495,7 @@ pub struct RegionIter<'a> {
 }
 
 impl<'a> RegionIter<'a> {
-    fn make(rl: &'a mut RegionList) -> Self {
-        rl.normalize();
+    fn make(rl: &'a RegionList) -> Self {
         let inner = if rl.flags & RL_ALL == 0 && !rl.ctg_map.is_empty() {
             Some(RlIter::from_region_list(rl))
         } else {
@@ -569,6 +581,7 @@ mod tests {
         rl.add_reg(&reg);
         let reg = Reg::try_from("chr7:252654").unwrap();
         rl.add_reg(&reg);
+        rl.normalize();
 
         let r = rl.regions().nth(1).unwrap();
         let (start, stop) = r.coords();
@@ -588,6 +601,7 @@ mod tests {
         rl.add_reg(&reg);
         let reg = Reg::try_from(b"chr5:1700-2500").unwrap();
         rl.add_reg(&reg);
+        rl.normalize();
 
         eprintln!("OookOook {rl:?}");
 
@@ -653,7 +667,7 @@ mod tests {
         rl.add_reg(&reg);
         let reg = Reg::try_from("chr7:252654").unwrap();
         rl.add_reg(&reg);
-
+        rl.normalize();
         assert_eq!(rl.regions().count(), 3);
 
         for (ctg, r) in rl.contig_reg_lists_mut() {

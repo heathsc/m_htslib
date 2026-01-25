@@ -10,4 +10,6 @@ pub enum FaidxError {
     ErrorLoadingSequence,
     #[error("Error loading FASTA/FASTQ index")]
     ErrorLoadingFaidx,
+    #[error("Error building FASTA/FASTQ index")]
+    ErrorBuildingFaidx,
 }

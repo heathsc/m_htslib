@@ -451,7 +451,7 @@ impl RegCoords for Region {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Reg<'a> {
     Contig(&'a RegContig),
     Open(&'a RegContig, usize),
@@ -618,6 +618,14 @@ impl<'a> Reg<'a> {
             Self::Closed(c, x, y) => c.make_closed_region(h, *x as HtsPos, y.get() as HtsPos),
             Self::All => Ok(HtsRegion::new(HTS_IDX_START, 0, 1)),
             Self::Unmapped => Ok(HtsRegion::new(HTS_IDX_NOCOOR, 0, 1)),
+        }
+    }
+    
+    pub fn to_cstr(&self) -> Option<&CStr> {
+        match self {
+            Self::Contig(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.to_cstr(),
+            Self::All => Some(c"."),
+            Self::Unmapped => Some(c"*"),
         }
     }
 }

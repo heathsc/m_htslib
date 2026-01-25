@@ -13,7 +13,7 @@ use crate::{
     bgzf::BgzfRaw,
     from_c,
     hts::{
-        HtsPos,
+        HtsPos, HtsTPoolRaw, HtsThreadPool,
         traits::{HdrType, HtsHdrType, IdMap, SeqId},
     },
     khash::{KHashMap, KHashMapRaw},
@@ -51,16 +51,23 @@ unsafe extern "C" {
         fngzi: *const c_char,
         flags: c_int,
     ) -> *mut FaidxRaw;
+    fn fai_build(fn_: *const c_char) -> c_int;
     fn faidx_nseq(fai: *const FaidxRaw) -> c_int;
     fn faidx_iseq(fai: *const FaidxRaw, n: c_int) -> *const c_char;
     fn faidx_seq_len64(fai: *const FaidxRaw, seq: *const c_char) -> HtsPos;
+    /// Note - in htslib/faidx.h this has fai as a const pointer, but there is uncontrolled
+    /// interior mutability w.r.t. the underlying file ptr, so we mark it as a mut pointer
     fn faidx_fetch_seq64(
-        fai: *const FaidxRaw,
+        fai: *mut FaidxRaw,
         cname: *const c_char,
         x: HtsPos,
         y: HtsPos,
         len: *mut HtsPos,
     ) -> *mut c_char;
+    fn fai_destroy(fai: *mut FaidxRaw);
+    fn faidx_has_seq(fai: *const FaidxRaw, cname: *const c_char) -> c_int;
+    unsafe fn fai_thread_pool(fai: *mut FaidxRaw, tpool: *const HtsTPoolRaw, qsize: c_int)
+    -> c_int;
 }
 
 impl FaidxRaw {
@@ -75,18 +82,37 @@ impl FaidxRaw {
         from_c(unsafe { faidx_iseq(self, i as libc::c_int) })
     }
 
+    pub fn has_seq<S: AsRef<CStr>>(&self, cname: S) -> bool {
+        let cname = cname.as_ref();
+        let ret = unsafe { faidx_has_seq(self as *const FaidxRaw, cname.as_ptr()) };
+        ret == 1
+    }
+
     pub fn get_seq_len<S: AsRef<CStr>>(&self, cname: S) -> Option<usize> {
         let cname = cname.as_ref();
         let len = unsafe { faidx_seq_len64(self as *const FaidxRaw, cname.as_ptr()) };
         if len < 0 { None } else { Some(len as usize) }
     }
 
+    pub fn set_thread_pool(&mut self, thread_pool: &HtsThreadPool) {
+        unsafe {
+            fai_thread_pool(
+                self as *mut FaidxRaw,
+                thread_pool.deref(),
+                thread_pool.size() as c_int,
+            )
+        };
+    }
+
     // Attempts to load reference sequence from file
     // x and y are 1 offset coordinates.  Setting x to 0 or 1 will load from the start of the contig.  Setting y to None
     // or a very large value will load until the end of the chromosome.
     // Returns errors if the chromosome is not found, the coordinates are invalid (i.e., y < x) or an IO error occurred
+    //
+    // Note: even though the htslib call faidx_ftch_seq64() is marked as taking a const ptr to FaidxRaw, it has interior mutability
+    // w.r.t. the underlying file pointer. We therefore mark it as requiring &mut self to prevent sharing across threads using Arc
     pub fn fetch_seq<S: AsRef<CStr>>(
-        &self,
+        &mut self,
         cname: S,
         x: usize,
         y: Option<usize>,
@@ -123,6 +149,7 @@ impl FaidxRaw {
 }
 
 unsafe impl Send for Faidx {}
+unsafe impl Sync for Faidx {}
 
 impl Deref for Faidx {
     type Target = FaidxRaw;
@@ -136,6 +163,12 @@ impl DerefMut for Faidx {
     #[inline]
     fn deref_mut(&mut self) -> &mut FaidxRaw {
         unsafe { self.inner.as_mut() }
+    }
+}
+
+impl Drop for Faidx {
+    fn drop(&mut self) {
+        unsafe { fai_destroy(self.deref_mut()) }
     }
 }
 
@@ -156,6 +189,16 @@ impl Faidx {
         match NonNull::new(unsafe { fai_load(cname.as_ptr()) }) {
             None => Err(FaidxError::ErrorLoadingFaidx),
             Some(idx) => Ok(Faidx { inner: idx }),
+        }
+    }
+
+    pub fn build<S: AsRef<Path>>(name: S) -> Result<(), FaidxError> {
+        // If this fails then it is an error in the Rust std library!
+        let cname = CString::new(name.as_ref().as_os_str().as_bytes()).unwrap();
+
+        match unsafe { fai_build(cname.as_ptr()) } {
+            0 => Ok(()),
+            _ => Err(FaidxError::ErrorBuildingFaidx),
         }
     }
 }
@@ -196,11 +239,11 @@ pub(super) enum SeqStore {
 impl SeqStore {
     fn seq(&self) -> &[u8] {
         match self {
-            Self::CPtr(p, len) => unsafe { std::slice::from_raw_parts(p.as_ptr(), *len) }
+            Self::CPtr(p, len) => unsafe { std::slice::from_raw_parts(p.as_ptr(), *len) },
             Self::Slice(s) => s.as_ref(),
         }
     }
-    
+
     fn len(&self) -> usize {
         match self {
             Self::CPtr(_, len) => *len,
@@ -232,7 +275,7 @@ impl Sequence {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
-    
+
     pub fn from_slice(slice: &[u8], offset: usize) -> Self {
         Self::from_boxed_slice(slice.to_owned().into_boxed_slice(), offset)
     }
@@ -278,7 +321,10 @@ mod tests {
 
     #[test]
     fn test_faidx() {
-        let h = Faidx::load("test/xx.fa").unwrap();
+        let mut h = Faidx::load("test/xx.fa").unwrap();
+        let tp = HtsThreadPool::init(2).expect("Could not create threadpool");
+        
+        h.set_thread_pool(&tp);
         let l = h.get_seq_len(c"yy");
         assert_eq!(l, Some(20));
         let l1 = h.seq_len(1);
