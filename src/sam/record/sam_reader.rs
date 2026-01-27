@@ -111,12 +111,13 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
         itr: &mut HtsItr,
         rec: &mut Self::Rec,
     ) -> Result<Option<()>, Self::Err> {
+        
         let bgzf = self
             .hts_file
             .bgzf_desc()
             .map(|p| p.as_ptr())
             .unwrap_or_else(null_mut);
-
+        
         match unsafe {
             hts_itr_next(
                 bgzf,
@@ -128,7 +129,7 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
             0.. => Ok(Some(())),
             -1 => Ok(None),
             e => Err(SamError::SamReadError(e)),
-        }
+        } 
     }
 }
 

@@ -287,12 +287,8 @@ impl RegContig {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
-    fn make_open_region<T: IdMap + SeqId>(
-        &self,
-        h: &T,
-        x: HtsPos,
-    ) -> Result<HtsRegion, HtsError> {
+
+    fn make_open_region<T: IdMap + SeqId>(&self, h: &T, x: HtsPos) -> Result<HtsRegion, HtsError> {
         self.make_region(h, x, None)
     }
 
@@ -315,11 +311,19 @@ impl RegContig {
         x: HtsPos,
         y: Option<HtsPos>,
     ) -> Result<HtsRegion, HtsError> {
-        
-        let i = self.to_cstr().and_then(|s| h.seq_id(s))
+        let i = self
+            .to_cstr()
+            .and_then(|s| h.seq_id(s))
             .or_else(|| {
-            h.seq_id(CString::new(self.as_str()).expect("Bad contig name").as_c_str())
-        }).ok_or(HtsError::UnknownContig(self.to_cstr().unwrap_or(c"?").to_owned()))?;
+                h.seq_id(
+                    CString::new(self.as_str())
+                        .expect("Bad contig name")
+                        .as_c_str(),
+                )
+            })
+            .ok_or(HtsError::UnknownContig(
+                self.to_cstr().unwrap_or(c"?").to_owned(),
+            ))?;
         // We panic here because this indicates an internal error
         let len = h.seq_len(i).expect("Missing length") as HtsPos;
 
@@ -426,6 +430,21 @@ impl Region {
             Self::All => Ok(HtsRegion::new(HTS_IDX_START, 0, 1)),
             Self::Unmapped => Ok(HtsRegion::new(HTS_IDX_NOCOOR, 0, 1)),
         }
+    }
+    
+    pub fn is_unmapped(&self) -> bool {
+        matches!(self, Self::Unmapped)
+    }
+
+    pub fn is_all(&self) -> bool {
+        matches!(self, Self::All)
+    }
+
+    pub fn has_contigs(&self) -> bool {
+        matches!(
+            self,
+            Self::Contig(_) | Self::Open(_, _) | Self::Closed(_, _, _)
+        )
     }
 }
 
@@ -603,14 +622,14 @@ impl<'a> Reg<'a> {
     pub fn new_unmapped() -> Self {
         Self::Unmapped
     }
-    
+
     pub fn reg_contig(&self) -> Option<&'a RegContig> {
         match self {
             Self::Contig(s) | Self::Open(s, _) | Self::Closed(s, _, _) => Some(*s),
             _ => None,
         }
     }
-    
+
     pub fn make_htslib_region<T: IdMap + SeqId>(&self, h: &T) -> Result<HtsRegion, HtsError> {
         match self {
             Self::Contig(c) => c.make_full_region(h),
@@ -620,13 +639,28 @@ impl<'a> Reg<'a> {
             Self::Unmapped => Ok(HtsRegion::new(HTS_IDX_NOCOOR, 0, 1)),
         }
     }
-    
+
     pub fn to_cstr(&self) -> Option<&CStr> {
         match self {
             Self::Contig(s) | Self::Open(s, _) | Self::Closed(s, _, _) => s.to_cstr(),
             Self::All => Some(c"."),
             Self::Unmapped => Some(c"*"),
         }
+    }
+
+    pub fn is_unmapped(&self) -> bool {
+        matches!(self, Self::Unmapped)
+    }
+
+    pub fn is_all(&self) -> bool {
+        matches!(self, Self::All)
+    }
+
+    pub fn has_contigs(&self) -> bool {
+        matches!(
+            self,
+            Self::Contig(_) | Self::Open(_, _) | Self::Closed(_, _, _)
+        )
     }
 }
 

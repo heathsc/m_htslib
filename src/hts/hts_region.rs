@@ -14,7 +14,6 @@ pub struct HtsRegion {
 impl HtsRegion {
     #[inline]
     pub(crate) fn new(tid: c_int, start: HtsPos, end: HtsPos) -> Self {
-        assert!(tid >= 0);
         assert!(start <= end);
         Self { tid, start, end }
     }
