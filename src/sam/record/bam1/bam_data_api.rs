@@ -1,4 +1,4 @@
-use crate::{SamError, sam::{BamData, bam_data::BDAction, record::BamRec}};
+/* use crate::{SamError, sam::{BamData, bam_data::BDAction, record::BamRec}};
 
 
 impl BamRec {
@@ -9,3 +9,4 @@ impl BamRec {
         Ok(())
     }
 }
+*/

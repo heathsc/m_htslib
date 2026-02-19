@@ -206,6 +206,7 @@ impl MMParse {
         ))
     }
 
+    /// Use the standard MM and ML tags
     pub fn mod_iter<'a, 'b>(
         &'a mut self,
         rec: &'b BamRec,
@@ -213,10 +214,32 @@ impl MMParse {
     where
         'a: 'b,
     {
+        self.mod_iter_internal(rec, false)
+    }
+    
+    /// Use the alternate mm and ml tags
+    pub fn mod_iter_alt<'a, 'b>(
+        &'a mut self,
+        rec: &'b BamRec,
+    ) -> Result<Option<ModIter<'a, 'b>>, BaseModsError>
+    where
+        'a: 'b,
+    {
+        self.mod_iter_internal(rec, true)
+    }
+    
+    fn mod_iter_internal<'a, 'b>(
+        &'a mut self,
+        rec: &'b BamRec,
+        alt_tags: bool,
+    ) -> Result<Option<ModIter<'a, 'b>>, BaseModsError>
+    where
+        'a: 'b,
+    {
         self.clear();
 
         // Look for MM, ML and MN tags in rec
-        if let Some((mm, mn)) = self.find_mod_tags(rec).map_err(|e| {
+        if let Some((mm, mn)) = self.find_mod_tags(rec, alt_tags).map_err(|e| {
             BaseModsError::General(format!(
                 "Error processing MM/ML/MN tags for read {:?}: {e}",
                 rec.qname()
@@ -237,17 +260,23 @@ impl MMParse {
     fn find_mod_tags<'a>(
         &mut self,
         rec: &'a BamRec,
+        alt_tags: bool,
     ) -> Result<Option<(&'a CStr, Option<i64>)>, BaseModsError> {
         let mut ml_len = None;
         let mut mm_val = None;
         let mut mn_len = None;
 
+        let (mm_tag_pattern, ml_tag_pattern) = if alt_tags {
+            ("mm", "ml")
+        } else {
+            ("MM", "ML")
+        };
         for item in rec.aux_tags() {
             let item = item?;
             let tag = item.id()?;
 
             match tag {
-                "MM" => {
+                s if s == mm_tag_pattern => {
                     let mm = if let BamAuxVal::String(v) = item.get_val()? {
                         v
                     } else {
@@ -259,7 +288,7 @@ impl MMParse {
                     }
                     mm_val = Some(mm);
                 }
-                "ML" => {
+                s if s == ml_tag_pattern => {
                     if !matches!(
                         item.get_type()?,
                         (BamAuxTagType::Array, Some(BamAuxTagType::UInt8))

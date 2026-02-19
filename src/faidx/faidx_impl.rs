@@ -122,7 +122,7 @@ impl FaidxRaw {
             let y = y.map(|z| z.min(seq_len)).unwrap_or(seq_len);
             let x = x.saturating_sub(1);
             if y <= x {
-                Err(FaidxError::IllegalInput)
+                Err(FaidxError::IllegalInput(x, y))
             } else {
                 let mut len: HtsPos = 0;
                 let seq = unsafe {
@@ -290,13 +290,13 @@ impl Sequence {
     // Get sequence between x and y inclusive (1 offset)
     pub fn get_seq(&self, x: usize, y: usize) -> Result<&[u8], FaidxError> {
         if x < 1 || x < self.start || x > y {
-            Err(FaidxError::IllegalInput)
+            Err(FaidxError::IllegalInput(x, y))
         } else {
             let a = x - self.start;
             let slice = self.seq();
             let len = self.len();
             Ok(if a >= len {
-                &slice[..0]
+                &[]
             } else {
                 let b = (y + 1 - self.start).min(len);
                 &slice[a..b]

@@ -352,6 +352,10 @@ impl RegionList {
         assert_eq!(self.flags & RL_UNNORMALIZED, 0, "RegionList must be normalized before calling regions()");
         RegionIter::make(self)
     }
+    
+    pub fn contig_reg_list(&self, ctg: &RegContig) -> Option<&ContigRegList> {
+        self.ctg_map.get(ctg)
+    }
 
     pub fn contigs(&self) -> impl Iterator<Item = &CStr> {
         self.ctg_map.keys().map(|k| k.as_cstr())
@@ -399,11 +403,12 @@ impl RegionList {
     pub fn intersect(&mut self, other: &Self) -> Result<(), HtsError> {
         if other.flags & RL_UNNORMALIZED == 0 {
             self.normalize();
-            if self.flags | other.flags & RL_ALL == 0 {
+            if (self.flags | other.flags) & RL_ALL == 0 {
                 self.flags |= other.flags & RL_UNMAPPED;
                 let mut del_list = Vec::with_capacity(self.ctg_map.len());
                 for (ctg, reg) in self.ctg_map.iter_mut() {
                     if let Some(reg1) = other.ctg_map.get(ctg) {
+                        trace!("Calculating intersect for {ctg}");
                         reg.intersect(reg1)?;
                     } else {
                         del_list.push(ctg.clone());
