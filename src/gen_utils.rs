@@ -22,7 +22,7 @@ pub(crate) fn cstr_len(c: &CStr) -> usize {
 /// Round up to next power of 2 unless this exceeds the maximum of usize, in which case use usize::MAX
 /// This is a rust re-working of the kroundup32/64 macros from htslib
 #[inline]
-pub(crate) fn roundup(x: usize) -> usize {
+pub fn roundup(x: usize) -> usize {
     x.checked_next_power_of_two().unwrap_or(usize::MAX)
 }
 
