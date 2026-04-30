@@ -10,6 +10,7 @@ pub struct HtsTPoolRaw {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct HtsTPool {
     inner: NonNull<HtsTPoolRaw>,
 }
@@ -65,6 +66,7 @@ impl HtsTPool {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct HtsThreadPool {
     inner: HtsTPool,
     qsize: c_int,
