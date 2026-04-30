@@ -286,6 +286,10 @@ impl Sequence {
             start: offset + 1,
         }
     }
+    
+    pub fn start(&self) -> usize {
+        self.start
+    }
 
     // Get sequence between x and y inclusive (1 offset)
     pub fn get_seq(&self, x: usize, y: usize) -> Result<&[u8], FaidxError> {
