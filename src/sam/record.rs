@@ -2,8 +2,8 @@ pub mod bam1;
 pub mod sam_reader;
 pub mod sam_writer;
 
-pub use bam1::parse::SamParser;
-use bam1::*;
+pub use bam1::*;
+pub use parse::SamParser;
 
 /// Wrapper around the htslib struct bam1_t.
 /// All non library rust code should work with BamRec rather than
