@@ -3,7 +3,8 @@ extern crate log;
 
 use std::sync::RwLock;
 
-pub mod base;
+pub use m_htslib_rust::base;
+
 pub mod bgzf;
 pub mod cram;
 pub mod error;

@@ -7,7 +7,6 @@ mod cigar_validate;
 pub mod record;
 pub mod sam_error;
 pub mod sam_hdr;
-pub mod seq_iter;
 
 pub use bam_data::*;
 pub use base_mods::*;
@@ -18,4 +17,4 @@ pub use record::*;
 pub use sam_hdr::*;
 pub use record::sam_reader::*;
 pub use record::sam_writer::*;
-pub use seq_iter::*;
+pub use m_htslib_rust::sam::seq_iter::*;
