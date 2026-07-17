@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{Whence, hts_format::HtsFormat};
-use crate::{cstr_len, error::HtsError, gen_utils::CStrWrap, kstring::KString};
+use crate::{cstr_len, error::HtsError, CStrWrap, kstring::KString};
 
 #[repr(C)]
 struct HFileBackend {

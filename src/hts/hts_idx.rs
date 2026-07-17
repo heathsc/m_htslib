@@ -10,7 +10,7 @@ use super::{
     HtsPos,
 };
 
-use crate::gen_utils::CStrWrap;
+use crate::CStrWrap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
