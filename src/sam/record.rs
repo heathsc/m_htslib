@@ -20,9 +20,10 @@ mod tests {
     use super::*;
 
     use crate::{
+        cigar::CigarBuf,
         hts::HtsFile,
         kstring::KString,
-        sam::{BamAuxVal, CigarBuf, SamHdr, SamParser, SequenceIter},
+        sam::{BamAuxVal, SamHdr, SamParser, SequenceIter},
     };
 
     use std::io::Write;
