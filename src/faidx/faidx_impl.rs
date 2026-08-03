@@ -109,7 +109,7 @@ impl FaidxRaw {
     // or a very large value will load until the end of the chromosome.
     // Returns errors if the chromosome is not found, the coordinates are invalid (i.e., y < x) or an IO error occurred
     //
-    // Note: even though the htslib call faidx_ftch_seq64() is marked as taking a const ptr to FaidxRaw, it has interior mutability
+    // Note: even though the htslib call faidx_fetch_seq64() is marked as taking a const ptr to FaidxRaw, it has interior mutability
     // w.r.t. the underlying file pointer. We therefore mark it as requiring &mut self to prevent sharing across threads using Arc
     pub fn fetch_seq<S: AsRef<CStr>>(
         &mut self,
