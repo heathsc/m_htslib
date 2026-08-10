@@ -17,7 +17,7 @@ use super::{
 };
 
 use crate::{
-    CStrWrap,
+    gen_utils::CStrWrap,
     HtsError, bgzf::BgzfRaw, cram::CramFdRaw, hts::hts_opt::HtsOpt, kstring::KString,
     sam::sam_hdr::SamHdrRaw,
 };

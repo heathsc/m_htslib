@@ -11,7 +11,7 @@ use libc::{c_char, c_int, c_void, free};
 use crate::{
     FaidxError,
     bgzf::BgzfRaw,
-    from_c,
+    gen_utils::from_c,
     hts::{
         HtsPos, HtsTPoolRaw, HtsThreadPool,
         traits::{HdrType, HtsHdrType, IdMap, SeqId},

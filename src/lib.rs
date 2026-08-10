@@ -14,7 +14,7 @@ pub mod region;
 pub mod sam;
 
 pub use error::*;
-pub use m_htslib_rust::{int_utils, gen_utils::*, sam::cigar, khash, le_bytes};
+pub use m_htslib_rust::{int_utils, gen_utils, sam::cigar, khash, le_bytes};
 pub use le_bytes::LeBytes;
 
 /// Controls access to global statics in libhts

@@ -90,7 +90,7 @@ impl bam1_t {
     fn realloc_data(&mut self, size: usize) {
         // Can only use this with htslib managed data
         assert_eq!(self.mempolicy & BAM_USER_OWNS_DATA, 0);
-        let s = crate::roundup(size);
+        let s = crate::gen_utils::roundup(size);
         assert!(
             s <= c_int::MAX as usize,
             "Requested allocation size is too large for Bam Record"

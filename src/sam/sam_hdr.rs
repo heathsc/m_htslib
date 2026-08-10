@@ -12,7 +12,7 @@ use std::{
 
 use super::sam_error::SamError;
 use crate::{
-    cstr_len, from_c,
+    gen_utils::{cstr_len, from_c},
     hts::{
         htsfile::{HtsFile, HtsFileRaw},
         traits::*,
