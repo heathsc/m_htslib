@@ -7,10 +7,11 @@ impl Drop for bam1_t {
     }
 }
 
+/* 
 impl Clone for bam1_t {
     fn clone(&self) -> Self {
         let mut new = Self::default();
         self.copy(&mut new);
         new
     }
-} 
+} */
