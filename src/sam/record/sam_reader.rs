@@ -99,8 +99,14 @@ impl ReadRec for SamReader<'_, '_, '_> {
 
         match unsafe { sam_read1(self.hts_file.deref_mut(), g.as_ptr_mut(), rec.as_mut_ptr()) } {
             0.. => Ok(Some(())),
-            -1 => Ok(None), // EOF
-            e => Err(SamError::SamReadError(e)),
+            -1 => {
+                rec.clear();
+                Ok(None)
+            } // EOF
+            e => {
+                rec.clear();
+                Err(SamError::SamReadError(e))
+            }
         }
     }
 }
@@ -127,8 +133,14 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
             )
         } {
             0.. => Ok(Some(())),
-            -1 => Ok(None),
-            e => Err(SamError::SamReadError(e)),
+            -1 => {
+                rec.clear();
+                Ok(None)
+            }
+            e => {
+                rec.clear();
+                Err(SamError::SamReadError(e))
+            }
         } 
     }
 }
