@@ -152,7 +152,6 @@ impl BamRec {
         SeqQualIter::new(self.seq_slice(), self.qual_slice())
     }
 
-    
     pub(crate) fn as_mut_ptr(&mut self) -> *mut bam1_t {
         &mut self.inner as *mut bam1_t
     }
