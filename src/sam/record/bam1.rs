@@ -65,7 +65,7 @@ struct bam1_core_t {
 pub(crate) struct bam1_t {
     core: bam1_core_t,
     id: u64,
-    data: *mut c_char,
+    data: *mut u8,
     l_data: c_int,
     m_data: u32,
     mempolicy: u32,
@@ -98,7 +98,7 @@ impl bam1_t {
         let new_data = unsafe { realloc(self.data as *mut c_void, s) };
         assert!(!new_data.is_null(), "Out of memory");
 
-        self.data = new_data as *mut c_char;
+        self.data = new_data as *mut u8;
         self.m_data = s as u32;
         if s < self.l_data as usize {
             // If we have reduced the data size below what was in use, then we can't trust anything
@@ -136,7 +136,7 @@ impl bam1_t {
     #[inline]
     fn push_char(&mut self, b: u8) {
         self.reserve(1);
-        unsafe { *self.data.add(self.l_data as usize) = b as c_char }
+        unsafe { *self.data.add(self.l_data as usize) = b }
         self.l_data += 1
     }
 

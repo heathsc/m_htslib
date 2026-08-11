@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use libc::{c_char, c_int};
+use libc::c_int;
 
 use super::{super::BamRec, BAM_FMUNMAP, BAM_FUNMAP};
 use crate::{
@@ -167,12 +167,12 @@ impl BamRec {
 
             // Pack sequence into nybbles
             for (s1, p) in iter.zip(seq.iter_mut()) {
-                *p = Base::from_u8(s1[0]).combine(&Base::from_u8(s1[1])) as c_char;
+                *p = Base::from_u8(s1[0]).combine(&Base::from_u8(s1[1]));
             }
 
             // Do remaining base if seq len is odd
             if let Some(c) = r.first() {
-                *seq.last_mut().unwrap() = (Base::from_u8(*c).as_u8() << 4) as c_char
+                *seq.last_mut().unwrap() = Base::from_u8(*c).as_u8() << 4
             }
         }
         Ok(())
@@ -190,13 +190,13 @@ impl BamRec {
         self.inner.l_data += l as i32;
 
         if s == b"*" {
-            qual.fill(-1)
+            qual.fill(0xff)
         } else {
             if s.len() != l {
                 return Err(SamError::SeqQualMismatch);
             }
             for (sq, q) in s.iter().zip(qual.iter_mut()) {
-                *q = (*sq - 33) as c_char
+                *q = *sq - 33
             }
         }
         Ok(())

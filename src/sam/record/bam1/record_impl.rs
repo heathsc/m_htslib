@@ -4,7 +4,7 @@ use crate::{
     hts::HtsPos, sam::{bam1::{bam1_t, BAM_FREVERSE}, BamRec, Cigar, CigarElem, QualIter, SeqIter, SeqQualIter}, SamError
 };
 
-use libc::c_int;
+use libc::{c_char, c_int};
 
 use super::{BAM_FMUNMAP, BAM_FUNMAP, bam1_core_t};
 
@@ -29,7 +29,7 @@ impl BamRec {
         if self.inner.data.is_null() {
             None
         } else {
-            Some(unsafe { CStr::from_ptr(self.inner.data) })
+            Some(unsafe { CStr::from_ptr(self.inner.data as *mut c_char) })
         }
     }
 

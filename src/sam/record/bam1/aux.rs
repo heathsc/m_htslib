@@ -163,7 +163,7 @@ impl BamRec {
             let tag = t?;
             if tag_ids.contains(&tag.id()?) {
                 let len = tag.data().len();
-                let p = tag.data().as_ptr() as *const i8;
+                let p = tag.data().as_ptr();
                 let off = unsafe { p.offset_from(self.inner.data) };
                 del.add_block(i, off, len);
                 n += 1;
