@@ -236,6 +236,20 @@ pub(super) enum SeqStore {
     Slice(Box<[u8]>),
 }
 
+impl Clone for SeqStore {
+    fn clone(&self) -> Self {
+        match self {
+            Self::CPtr(p, len) => {
+                let p1 = NonNull::new(unsafe { libc::calloc(1, *len) as *mut u8})
+                    .expect("Could not malloc new CPtr");
+                unsafe {std::ptr::copy_nonoverlapping(p.as_ptr(), p1.as_ptr(), *len) }
+                Self::CPtr(p1, *len)
+            }
+            Self::Slice(s) => Self::Slice(s.clone()),
+        }
+    }
+}
+
 impl SeqStore {
     fn seq(&self) -> &[u8] {
         match self {
@@ -286,7 +300,7 @@ impl Sequence {
             start: offset + 1,
         }
     }
-    
+
     pub fn start(&self) -> usize {
         self.start
     }
@@ -327,7 +341,7 @@ mod tests {
     fn test_faidx() {
         let mut h = Faidx::load("test/xx.fa").unwrap();
         let tp = HtsThreadPool::init(2).expect("Could not create threadpool");
-        
+
         h.set_thread_pool(&tp);
         let l = h.get_seq_len(c"yy");
         assert_eq!(l, Some(20));

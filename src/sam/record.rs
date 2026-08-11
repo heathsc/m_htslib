@@ -8,7 +8,7 @@ pub use parse::SamParser;
 /// Wrapper around the htslib struct bam1_t.
 /// All non library rust code should work with BamRec rather than
 /// with bam1_t (which is private)
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct BamRec {
     inner: bam1_t,
 }

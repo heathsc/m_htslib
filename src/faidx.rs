@@ -10,6 +10,7 @@ pub struct Faidx {
     inner: NonNull<FaidxRaw>,
 }
 
+#[derive(Clone)]
 pub struct Sequence {
     inner: SeqStore,
     start: usize,
