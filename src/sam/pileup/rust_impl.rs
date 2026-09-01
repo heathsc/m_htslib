@@ -47,7 +47,7 @@ impl BamPlp {
         unsafe { c_func_calls::bam_plp_push(self.inner.as_mut() as *mut bam_plp_t, b.as_ptr()) }
     }
 
-    pub fn next<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
+    pub fn next<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
         let mut pos: HtsPos = 0;
         let mut tid: c_int = -1;
         let mut n: c_int = 0;
@@ -62,7 +62,7 @@ impl BamPlp {
         make_plp_return(plp, tid, pos, n)
     }
 
-    pub fn auto<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
+    pub fn auto<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
         let mut pos: HtsPos = 0;
         let mut tid: c_int = -1;
         let mut n: c_int = 0;
@@ -161,7 +161,7 @@ where
 
     pub fn auto(
         &mut self,
-    ) -> Result<Option<(c_int, HtsPos, &[Option<&'a [BamPileup]>])>, SamError> {
+    ) -> Result<Option<(c_int, HtsPos, &[Option<&'a [BamPileup<'a>]>])>, SamError> {
         // Make sure previous results cannot be used
         self.plp.fill(None);
         self.plp_raw.fill(std::ptr::null());
