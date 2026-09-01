@@ -12,6 +12,7 @@ use crate::{
     sam::BamRec,
 };
 
+#[repr(C)]
 pub struct BamPileup {
     inner: NonNull<bam_pileup1_t>,
 }
