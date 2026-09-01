@@ -31,6 +31,7 @@ unsafe extern "C" {
     unsafe fn sam_index_load(fp_: *mut HtsFileRaw, fn_: *const c_char) -> *mut HtsIdxRaw;
 }
 
+#[repr(C)]
 pub struct SamReader<'a: 'b, 'b, 'c> {
     hts_file: &'b mut HtsFile<'a>,
     hdr: &'c SamHdr,

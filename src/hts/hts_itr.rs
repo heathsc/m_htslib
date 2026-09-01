@@ -175,6 +175,7 @@ where
 {
 }
 
+#[repr(C)]
 pub struct HtsRegionsIter<F, R, I>
 where
     F: Fn(&HtsRegion) -> Option<HtsItr>,
@@ -184,6 +185,7 @@ where
     iter: HtsRegionIter<R>,
 }
 
+#[repr(C)]
 pub struct HtsRegionIter<R> {
     read_rec: R,
     current_iter: Option<HtsItr>,

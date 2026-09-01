@@ -1,6 +1,5 @@
 use std::{
     marker::PhantomData,
-    ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
@@ -37,7 +36,7 @@ pub struct BamPlp {
 }
 
 impl BamPlp {
-    pub fn make_reader<R: ReadRec<Rec = BamRec>>(data: &mut R) -> Self {
+    pub fn init<R: ReadRec<Rec = BamRec>>(data: &mut R) -> Self {
         let f: extern "C" fn(*mut R, *mut R::Rec) -> c_int = bam_plp_callback::<R>;
         let ptr: BamPlpAuto = unsafe { std::mem::transmute(f) };
         let inner = NonNull::new(unsafe {

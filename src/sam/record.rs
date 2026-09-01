@@ -9,6 +9,7 @@ pub use parse::SamParser;
 /// All non library rust code should work with BamRec rather than
 /// with bam1_t (which is private)
 #[derive(Clone, Default, Debug)]
+#[repr(C)]
 pub struct BamRec {
     inner: bam1_t,
 }

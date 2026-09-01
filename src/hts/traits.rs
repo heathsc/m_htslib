@@ -101,3 +101,4 @@ pub trait WriteRec {
 
     fn write_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
 }
+

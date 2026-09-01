@@ -36,7 +36,7 @@ pub(super) struct bam_pileup1_t {
     #[bitfield(name = "is_refskip", ty = "bool", bits = "3..=3")]
     #[bitfield(name = "aux", ty = "u32", bits = "4..=31")]
     bfield: [u8; 4],
-    cd: bam_pileup_cd,
+    _cd: bam_pileup_cd, // Not currently used
     cigar_ind: c_int,
 }
 

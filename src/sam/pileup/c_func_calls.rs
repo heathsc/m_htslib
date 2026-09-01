@@ -1,6 +1,6 @@
 use libc::{c_int, c_void};
 
-use super::bam_pileup1::{BamPlpAuto, bam_mplp_t, bam_pileup_cd, bam_pileup1_t, bam_plp_t};
+use super::bam_pileup1::{BamPlpAuto, bam_mplp_t, bam_pileup1_t, bam_plp_t};
 use crate::{hts::HtsPos, sam::bam1_t};
 
 #[link(name = "hts")]
@@ -40,12 +40,4 @@ unsafe extern "C" {
     ) -> c_int;
 
     pub(super) unsafe fn bam_mplp_reset(iter: *mut bam_mplp_t);
-    pub(super) unsafe fn bam_mplp_contructor(
-        iter: *mut bam_mplp_t,
-        func: extern "C" fn(data: *mut c_void, b: *const bam1_t, cd: *mut bam_pileup_cd) -> c_int,
-    );
-    pub(super) unsafe fn bam_mplp_destructor(
-        iter: *mut bam_mplp_t,
-        func: extern "C" fn(data: *mut c_void, b: *const bam1_t, cd: *mut bam_pileup_cd) -> c_int,
-    );
 }
