@@ -11,13 +11,14 @@ use crate::{
 };
 
 #[repr(C)]
-pub struct BamPileup {
-    inner: NonNull<bam_pileup1_t>,
+pub struct BamPileup<'a> {
+    inner: *const bam_pileup1_t,
+    _phantom: PhantomData<&'a bam_pileup1_t>
 }
 
-impl BamPileup {
-    pub(super) fn as_ref(&self) -> &bam_pileup1_t {
-        unsafe { self.inner.as_ref() }
+impl <'a> BamPileup<'a> {
+    pub(super) fn as_ref(&self) -> &'a bam_pileup1_t {
+        unsafe { self.inner.as_ref().unwrap() }
     }
 }
 
@@ -91,7 +92,7 @@ fn make_plp_return<'a>(
     tid: c_int,
     pos: HtsPos,
     n: c_int,
-) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
+) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
     if n < 0 {
         Err(SamError::PileupError)
     } else if n == 0 || plp.is_null() {
@@ -104,7 +105,7 @@ fn make_plp_return<'a>(
 
 pub struct BamMPlp<'a, 'b, T> {
     inner: NonNull<bam_mplp_t>,
-    plp: Box<[Option<&'a [BamPileup]>]>,
+    plp: Box<[Option<&'a [BamPileup<'a>]>]>,
     plp_raw: Box<[*const bam_pileup1_t]>,
     depth: Box<[c_int]>,
     _data: BamMPlpData<'b, T>,
@@ -200,7 +201,7 @@ where
                     let p2 = unsafe { &(*p1.b) };
                     println!("OOOK! {} {} {p2:?}", p1.indel, p1.qpos);
                     let p1 = unsafe { &(*(p as *const BamPileup)) };
-                    let p2 = p1.inner.as_ptr() as *const bam_pileup1_t;
+                    let p2 = p1.inner;
                     assert_eq!(p, p2);
                     
                     println!("ACKK! {} {}", p1.indel(), p1.qpos());
