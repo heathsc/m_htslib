@@ -7,9 +7,7 @@ use super::{
     c_func_calls,
 };
 use crate::{
-    SamError,
-    hts::{HtsPos, ReadRec},
-    sam::BamRec,
+    SamError, hts::{HtsPos, ReadRec}, sam::{BamRec, pileup::bam_pileup1},
 };
 
 #[repr(C)]
@@ -202,6 +200,9 @@ where
                     let p2 = unsafe { &(*p1.b) };
                     println!("OOOK! {} {} {p2:?}", p1.indel, p1.qpos);
                     let p1 = unsafe { &(*(p as *const BamPileup)) };
+                    let p2 = p1.inner.as_ptr() as *const bam_pileup1_t;
+                    assert_eq!(p, p2);
+                    
                     println!("ACKK! {} {}", p1.indel(), p1.qpos());
 
                     let s =
