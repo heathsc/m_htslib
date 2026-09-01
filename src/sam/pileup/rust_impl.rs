@@ -159,7 +159,9 @@ where
         unsafe { c_func_calls::bam_mplp_init_overlaps(self.inner.as_mut() as *mut bam_mplp_t) };
     }
 
-    pub fn auto(mut self) -> Result<Option<(c_int, HtsPos)>, SamError> {
+    pub fn auto(
+        &mut self,
+    ) -> Result<Option<(c_int, HtsPos, &[Option<&'a [BamPileup]>])>, SamError> {
         // Make sure previous results cannot be used
         self.plp.fill(None);
         self.plp_raw.fill(std::ptr::null());
@@ -200,7 +202,7 @@ where
                     *q = Some(s)
                 }
             }
-            Ok(Some((tid, pos)))
+            Ok(Some((tid, pos, self.plp.as_ref())))
         }
     }
 
