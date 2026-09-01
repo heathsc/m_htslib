@@ -109,4 +109,6 @@ pub enum SamError {
     BaqRealignFailed,
     #[error("BAQ realignment failed - unknown error")]
     BaqRealignUnknownError,
+    #[error("Error generating pileup")]
+    PileupError,
 }
