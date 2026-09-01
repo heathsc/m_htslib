@@ -203,6 +203,9 @@ where
                     
                     let s =
                         unsafe { std::slice::from_raw_parts(p as *const BamPileup, *dp as usize) };
+
+                    let p1 = &s[0];
+                    println!("EEEK! {} {}", p1.indel(), p1.qpos());
                     *q = Some(s)
                 }
             }
