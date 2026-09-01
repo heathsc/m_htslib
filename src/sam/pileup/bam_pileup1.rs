@@ -26,9 +26,9 @@ pub(super) union bam_pileup_cd {
 #[repr(C)]
 #[derive(BitfieldStruct)]
 pub(super) struct bam_pileup1_t {
-    b: *mut bam1_t,
-    qpos: i32,
-    indel: c_int,
+    pub(super) b: *mut bam1_t,
+    pub(super) qpos: i32,
+    pub(super) indel: c_int,
     level: c_int,
     #[bitfield(name = "is_del", ty = "bool", bits = "0..=0")]
     #[bitfield(name = "is_head", ty = "bool", bits = "1..=1")]
