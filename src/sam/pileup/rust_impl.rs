@@ -7,18 +7,18 @@ use super::{
     c_func_calls,
 };
 use crate::{
-    SamError, hts::{HtsPos, ReadRec}, sam::{BamRec, pileup::bam_pileup1},
+    SamError,
+    hts::{HtsPos, ReadRec},
+    sam::BamRec,
 };
 
-#[repr(C)]
-pub struct BamPileup<'a> {
-    inner: *const bam_pileup1_t,
-    _phantom: PhantomData<&'a bam_pileup1_t>
+pub struct BamPileup {
+    inner: bam_pileup1_t
 }
 
-impl <'a> BamPileup<'a> {
-    pub(super) fn as_ref(&self) -> &'a bam_pileup1_t {
-        unsafe { self.inner.as_ref().unwrap() }
+impl BamPileup {
+    pub(super) fn as_ref(&self) -> &bam_pileup1_t {
+        &self.inner
     }
 }
 
@@ -47,7 +47,7 @@ impl BamPlp {
         unsafe { c_func_calls::bam_plp_push(self.inner.as_mut() as *mut bam_plp_t, b.as_ptr()) }
     }
 
-    pub fn next<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
+    pub fn next<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
         let mut pos: HtsPos = 0;
         let mut tid: c_int = -1;
         let mut n: c_int = 0;
@@ -62,7 +62,7 @@ impl BamPlp {
         make_plp_return(plp, tid, pos, n)
     }
 
-    pub fn auto<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
+    pub fn auto<'a>(&'a mut self) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
         let mut pos: HtsPos = 0;
         let mut tid: c_int = -1;
         let mut n: c_int = 0;
@@ -92,7 +92,7 @@ fn make_plp_return<'a>(
     tid: c_int,
     pos: HtsPos,
     n: c_int,
-) -> Result<Option<(&'a [BamPileup<'a>], c_int, HtsPos)>, SamError> {
+) -> Result<Option<(&'a [BamPileup], c_int, HtsPos)>, SamError> {
     if n < 0 {
         Err(SamError::PileupError)
     } else if n == 0 || plp.is_null() {
@@ -103,25 +103,24 @@ fn make_plp_return<'a>(
     }
 }
 
-pub struct BamMPlp<'a, 'b, T> {
+pub struct BamMPlp<'a, T> {
     inner: NonNull<bam_mplp_t>,
-    plp: Box<[Option<&'a [BamPileup<'a>]>]>,
     plp_raw: Box<[*const bam_pileup1_t]>,
     depth: Box<[c_int]>,
-    _data: BamMPlpData<'b, T>,
+    _data: BamMPlpData<'a, T>,
 }
 
-impl<T> Drop for BamMPlp<'_, '_, T> {
+impl<T> Drop for BamMPlp<'_, T> {
     fn drop(&mut self) {
         unsafe { c_func_calls::bam_mplp_destroy(self.inner.as_mut()) };
     }
 }
 
-impl<'a, 'b, R> BamMPlp<'a, 'b, R>
+impl<'a, R> BamMPlp<'a, R>
 where
     R: ReadRec<Rec = BamRec>,
 {
-    pub fn init(data: &'b mut [R]) -> Self {
+    pub fn init(data: &'a mut [R]) -> Self {
         let v: Box<_> = data.iter_mut().map(|p| p as *mut R).collect();
         let n = v.len();
 
@@ -130,7 +129,6 @@ where
             _phantom: PhantomData,
         };
 
-        let plp: Box<[Option<&[BamPileup]>]> = vec![None; n].into_boxed_slice();
         let plp_raw: Box<[*const bam_pileup1_t]> = vec![std::ptr::null(); n].into_boxed_slice();
 
         let depth: Box<[c_int]> = vec![0; n].into_boxed_slice();
@@ -148,7 +146,6 @@ where
 
         Self {
             inner,
-            plp,
             plp_raw,
             depth,
             _data: d,
@@ -159,11 +156,8 @@ where
         unsafe { c_func_calls::bam_mplp_init_overlaps(self.inner.as_mut() as *mut bam_mplp_t) };
     }
 
-    pub fn auto(
-        &mut self,
-    ) -> Result<Option<(c_int, HtsPos, &[Option<&'a [BamPileup<'a>]>])>, SamError> {
+    pub fn auto(&mut self) -> Result<Option<(c_int, HtsPos)>, SamError> {
         // Make sure previous results cannot be used
-        self.plp.fill(None);
         self.plp_raw.fill(std::ptr::null());
         self.depth.fill(0);
 
@@ -185,36 +179,7 @@ where
         } else if ret == 0 {
             Ok(None)
         } else {
-            for ((p, q), dp) in self
-                .plp_raw
-                .iter()
-                .zip(self.plp.iter_mut())
-                .zip(self.depth.iter())
-            {
-                let p = *p;
-                if p.is_null() {
-                    assert_eq!(*dp, 0, "Null plp pointer with non-zero depth");
-                    *q = None;
-                } else {
-                    assert!(*dp > 0, "Non-null plp pointer with zero depth");
-                    let p1 = unsafe { &(*p) };
-                    let p2 = unsafe { &(*p1.b) };
-                    println!("OOOK! {} {} {p2:?}", p1.indel, p1.qpos);
-                    let p1 = unsafe { &(*(p as *const BamPileup)) };
-                    let p2 = p1.inner;
-                    assert_eq!(p, p2);
-                    
-                    println!("ACKK! {} {}", p1.indel(), p1.qpos());
-
-                    let s =
-                        unsafe { std::slice::from_raw_parts(p as *const BamPileup, *dp as usize) };
-
-                    let p1 = &s[0];
-                    println!("EEEK! {} {}", p1.indel(), p1.qpos());
-                    *q = Some(s)
-                }
-            }
-            Ok(Some((tid, pos, self.plp.as_ref())))
+            Ok(Some((tid, pos)))
         }
     }
 
@@ -227,6 +192,21 @@ where
 
     pub fn reset(&mut self) {
         unsafe { c_func_calls::bam_mplp_reset(self.inner.as_mut() as *mut bam_mplp_t) };
+    }
+
+    pub fn plp(&self, ix: usize) -> Option<&[BamPileup]> {
+        self.plp_raw.get(ix).and_then(|q| {
+            if q.is_null() {
+                None
+            } else {
+                let n = self.depth[ix] as usize;
+                Some (
+                    unsafe {
+                        std::slice::from_raw_parts(*q as *const BamPileup, n)
+                    }
+                )
+            }
+        })
     }
 }
 

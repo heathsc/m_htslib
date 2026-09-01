@@ -42,7 +42,7 @@ pub(super) struct bam_pileup1_t {
 
 pub(super) type BamPlpAuto = extern "C" fn(data: *mut c_void, b: *mut bam1_t) -> c_int;
 
-impl BamPileup<'_> {
+impl BamPileup {
     pub fn bam_rec(&self) -> &BamRec {
         let b = NonNull::new(self.as_ref().b as *mut BamRec).expect("Bam record null in pileup");
         unsafe { b.as_ref() }
