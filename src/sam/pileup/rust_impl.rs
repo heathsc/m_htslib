@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    ptr::NonNull,
-};
+use std::{marker::PhantomData, ptr::NonNull};
 
 use libc::{c_int, c_void};
 
@@ -21,7 +18,7 @@ pub struct BamPileup {
 
 impl BamPileup {
     pub(super) fn as_ref(&self) -> &bam_pileup1_t {
-        unsafe {self.inner.as_ref() }
+        unsafe { self.inner.as_ref() }
     }
 }
 
@@ -106,23 +103,25 @@ fn make_plp_return<'a>(
     }
 }
 
-pub struct BamMPlp<'a> {
+pub struct BamMPlp<'a, 'b, T> {
     inner: NonNull<bam_mplp_t>,
     plp: Box<[Option<&'a [BamPileup]>]>,
     plp_raw: Box<[*const bam_pileup1_t]>,
     depth: Box<[c_int]>,
+    _data: BamMPlpData<'b, T>,
 }
 
-impl<'a> Drop for BamMPlp<'a> {
+impl<T> Drop for BamMPlp<'_, '_, T> {
     fn drop(&mut self) {
         unsafe { c_func_calls::bam_mplp_destroy(self.inner.as_mut()) };
     }
 }
 
-impl<'a> BamMPlp<'a> {
-    pub fn make_reader<'b, R: ReadRec<Rec = BamRec>>(
-        data: &'b mut [R],
-    ) -> (Self, BamMPlpData<'a, R>) {
+impl<'a, 'b, R> BamMPlp<'a, 'b, R>
+where
+    R: ReadRec<Rec = BamRec>,
+{
+    pub fn init(data: &'b mut [R]) -> Self {
         let v: Box<_> = data.iter_mut().map(|p| p as *mut R).collect();
         let n = v.len();
 
@@ -146,22 +145,21 @@ impl<'a> BamMPlp<'a> {
             )
         })
         .expect("bam_mplp_init failed");
-        (
-            Self {
-                inner,
-                plp,
-                plp_raw,
-                depth,
-            },
-            d,
-        )
+
+        Self {
+            inner,
+            plp,
+            plp_raw,
+            depth,
+            _data: d,
+        }
     }
 
     pub fn init_overlaps(&mut self) {
         unsafe { c_func_calls::bam_mplp_init_overlaps(self.inner.as_mut() as *mut bam_mplp_t) };
     }
 
-    pub fn auto<'b>(&'b mut self) -> Result<Option<(c_int, HtsPos)>, SamError> {
+    pub fn auto(mut self) -> Result<Option<(c_int, HtsPos)>, SamError> {
         // Make sure previous results cannot be used
         self.plp.fill(None);
         self.plp_raw.fill(std::ptr::null());
@@ -197,7 +195,8 @@ impl<'a> BamMPlp<'a> {
                     *q = None;
                 } else {
                     assert!(*dp > 0, "Non-null plp pointer with zero depth");
-                    let s = unsafe { std::slice::from_raw_parts(p as *const BamPileup, *dp as usize) };
+                    let s =
+                        unsafe { std::slice::from_raw_parts(p as *const BamPileup, *dp as usize) };
                     *q = Some(s)
                 }
             }
