@@ -199,9 +199,11 @@ where
                 } else {
                     assert!(*dp > 0, "Non-null plp pointer with zero depth");
                     let p1 = unsafe { &(*p) };
-                    let p2 = unsafe { &(*p1.b)};
+                    let p2 = unsafe { &(*p1.b) };
                     println!("OOOK! {} {} {p2:?}", p1.indel, p1.qpos);
-                    
+                    let p1 = unsafe { &(*(p as *const BamPileup)) };
+                    println!("ACKK! {} {}", p1.indel(), p1.qpos());
+
                     let s =
                         unsafe { std::slice::from_raw_parts(p as *const BamPileup, *dp as usize) };
 
