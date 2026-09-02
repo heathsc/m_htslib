@@ -386,6 +386,21 @@ where
     }
 }
 
+impl <R, F> ReadRecIter for FilterRead<R, F>
+where 
+    R: ReadRecIter,
+    F: FnMut(&R::Rec) -> bool,
+{
+    fn read_rec_iter(
+        &mut self,
+        itr: &mut HtsItr,
+        rec: &mut Self::Rec,
+    ) -> Result<Option<()>, Self::Err>
+    {
+        self.rdr.read_rec_iter(itr, rec)
+    }
+}
+
 impl<R, F> HdrType for FilterRead<R, F>
 where
     R: ReadRec + HdrType,
