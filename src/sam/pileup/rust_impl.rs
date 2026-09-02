@@ -201,9 +201,12 @@ where
 
     #[inline]
     pub fn plp<'b>(&'b self) -> MPlpIter<'b> {
-        MPlpIter { plp_raw: &self.plp_raw, depth: &self.depth }
+        MPlpIter {
+            plp_raw: &self.plp_raw,
+            depth: &self.depth,
+        }
     }
-    
+
     pub fn plp_get(&self, ix: usize) -> Option<&[BamPileup]> {
         self.plp_raw.get(ix).and_then(|q| {
             if q.is_null() {
@@ -221,7 +224,7 @@ pub struct MPlpIter<'a> {
     depth: &'a [c_int],
 }
 
-impl <'a> Iterator for MPlpIter<'a> {
+impl<'a> Iterator for MPlpIter<'a> {
     type Item = &'a [BamPileup];
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -234,21 +237,21 @@ impl <'a> Iterator for MPlpIter<'a> {
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let l = self.plp_raw.len();
-        if n >= l {
-            None
-        } else {
-            self.get_nth(n)
-        }
+        if n >= l { None } else { self.get_nth(n) }
     }
 }
 
-impl <'a> MPlpIter<'a> {
+impl<'a> MPlpIter<'a> {
     fn get_nth(&mut self, n: usize) -> Option<&'a [BamPileup]> {
-        let n = self.depth[n] as usize;
         let p = self.plp_raw[n];
+        let n = self.depth[n] as usize;
         self.depth = &self.depth[n + 1..];
         self.plp_raw = &self.plp_raw[n + 1..];
-        Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, n) })
+        if p.is_null() {
+            Some(&[])
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, n) })
+        }
     }
 }
 
