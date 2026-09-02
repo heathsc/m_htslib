@@ -49,7 +49,7 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
 }
 
 impl SamReader<'_, '_, '_> {
-    pub fn region_iter(mut self, region: &Reg) -> Result<impl ReadRec<Rec = BamRec, Err = SamError> + IdMap, SamError> {
+    pub fn region_iter(mut self, region: &Reg) -> Result<HtsRegionIter<Self>, SamError> {
         self.load_idx()?;
         let idx = self.idx.take().unwrap();
         let reg = region.make_htslib_region(self.hdr).expect("Invalid region");
