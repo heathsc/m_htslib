@@ -237,10 +237,7 @@ where
     }
 }
 
-impl<R> HtsRegionIter<R>
-where
-    R: ReadRecIter,
-{
+impl<R> HtsRegionIter<R> {
     pub fn make_region_iter<F: Fn(&HtsRegion) -> Option<HtsItr>>(
         region: HtsRegion,
         mk_hts_iter: F,
