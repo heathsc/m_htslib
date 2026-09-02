@@ -13,7 +13,7 @@ use crate::{
     hts::{
         HtsPos,
         hts_region::HtsRegion,
-        traits::{HdrType, IdMap, ReadRec, ReadRecIter},
+        traits::{HdrType, IdMap, ReadRec, ReadRecIter, RegionIter},
     },
 };
 
@@ -412,5 +412,22 @@ where
 
     fn seq_len(&self, i: usize) -> Option<usize> {
         self.rdr.seq_len(i)
+    }
+}
+
+impl<R, F> RegionIter for FilterRead<R, F>
+where
+    R: RegionIter
+{
+    type Err = R::Err;
+
+    fn region_iter(mut self, reg: &crate::region::Reg) -> Result<HtsRegionIter<Self>, Self::Err> {
+        match self.rdr.region_iter(reg) {
+            Err(e) => Err(e),
+            Ok(r) => {
+                self.rdr = r.read_rec;
+                Ok(HtsRegionIter { read_rec: self, current_iter: r.current_iter })
+            }
+        }
     }
 }

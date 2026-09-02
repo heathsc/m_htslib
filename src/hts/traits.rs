@@ -1,6 +1,7 @@
 use std::{error, ffi::CStr, fmt, iter::FusedIterator};
 
-use super::hts_itr::{FilterRead, HtsItr};
+use crate::region::Reg;
+use super::hts_itr::{FilterRead, HtsItr, HtsRegionIter};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HtsHdrType {
@@ -110,3 +111,11 @@ pub trait WriteRec {
     fn write_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
 }
 
+pub trait RegionIter
+where
+    Self: Sized
+{
+    type Err: fmt::Debug + error::Error + Send + Sync + 'static;
+    
+    fn region_iter(self, reg: &Reg) -> Result<HtsRegionIter<Self>, Self::Err>;
+}

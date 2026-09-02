@@ -11,7 +11,7 @@ use crate::{
     hts::{
         HtsFile, HtsFileRaw, HtsIdx, HtsIdxRaw, HtsPos, HtsRegion,
         hts_itr::{HtsItr, HtsItrRaw, HtsRegionIter, HtsRegionsIter, hts_itr_next},
-        traits::{HdrType, IdMap, ReadRec, ReadRecIter, SeqId},
+        traits::{HdrType, IdMap, ReadRec, ReadRecIter, RegionIter, SeqId},
     },
     region::Reg,
     sam::{SamHdr, SamHdrRaw},
@@ -48,17 +48,7 @@ impl<'a, 'b, 'c> SamReader<'a, 'b, 'c> {
     }
 }
 
-impl SamReader<'_, '_, '_> {
-    pub fn region_iter(mut self, region: &Reg) -> Result<HtsRegionIter<Self>, SamError> {
-        self.load_idx()?;
-        let idx = self.idx.take().unwrap();
-        let reg = region.make_htslib_region(self.hdr).expect("Invalid region");
-        let f = move |r: &HtsRegion| -> Option<HtsItr> {
-            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
-        };
-        Ok(HtsRegionIter::make_region_iter(reg, f, self))
-    }
-    
+impl SamReader<'_, '_, '_> {    
     pub fn regions_iter<'a, I, T>(
         mut self,
         regions: I,
@@ -143,6 +133,20 @@ impl ReadRecIter for SamReader<'_, '_, '_> {
                 Err(SamError::SamReadError(e))
             }
         } 
+    }
+}
+
+impl RegionIter for SamReader<'_, '_, '_> {
+    type Err = SamError;
+    
+    fn region_iter(mut self, reg: &Reg) -> Result<HtsRegionIter<Self>, Self::Err> {
+        self.load_idx()?;
+        let idx = self.idx.take().unwrap();
+        let reg = reg.make_htslib_region(self.hdr).expect("Invalid region");
+        let f = move |r: &HtsRegion| -> Option<HtsItr> {
+            HtsItr::make(unsafe { sam_itr_queryi(idx.deref(), r.tid(), r.start(), r.end()) })
+        };
+        Ok(HtsRegionIter::make_region_iter(reg, f, self))
     }
 }
 
