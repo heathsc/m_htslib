@@ -184,7 +184,7 @@ where
     }
 
     pub fn set_maxcnt(&mut self, max_cnt: c_int) {
-        assert!(max_cnt > 0, "Invalid maxcnt value {max_cnt}");
+        assert!(max_cnt > 0, "Invalid max_cnt value {max_cnt}");
         unsafe {
             c_func_calls::bam_mplp_set_maxcnt(self.inner.as_mut() as *mut bam_mplp_t, max_cnt)
         };
