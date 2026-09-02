@@ -1,6 +1,6 @@
 use std::{error, ffi::CStr, fmt, iter::FusedIterator};
 
-use super::hts_itr::HtsItr;
+use super::hts_itr::{FilterRead, HtsItr};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HtsHdrType {
@@ -85,6 +85,14 @@ pub trait ReadRec {
     type Err: fmt::Debug + error::Error + Send + Sync + 'static;
 
     fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err>;
+
+    fn filter<F>(self, f:F) -> FilterRead<Self, F>
+    where
+        Self: Sized,
+        F: FnMut(&Self::Rec) -> bool,
+    {
+        FilterRead::new(self, f)
+    }
 }
 
 pub trait ReadRecIter: ReadRec {

@@ -355,3 +355,62 @@ where
         self.read_rec.seq_len(i)
     }
 }
+
+pub struct FilterRead<R, F> {
+    rdr: R,
+    f: F,
+}
+
+impl <R, F> FilterRead<R, F> 
+where
+    R: ReadRec,
+    F: FnMut(&R::Rec) -> bool,
+{
+    pub(super) fn new(rdr: R, f:F) -> Self {
+        Self { rdr, f }
+    }
+}
+
+impl <R, F> ReadRec for FilterRead<R, F>
+where
+    R: ReadRec,
+    F: FnMut(&R::Rec) -> bool,
+{
+    type Err = R::Err;
+    type Rec = R::Rec;
+
+    fn read_rec(&mut self, rec: &mut Self::Rec) -> Result<Option<()>, Self::Err> {
+        while let Some(_) = self.rdr.read_rec(rec)? {
+            if (self.f)(rec) {
+                return Ok(Some(()))
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl<R, F> HdrType for FilterRead<R, F>
+where
+    R: ReadRec + HdrType,
+{
+    fn hdr_type(&self) -> super::traits::HtsHdrType {
+        self.rdr.hdr_type()
+    }
+}
+
+impl<R, F> IdMap for FilterRead<R, F>
+where
+    R: ReadRec + IdMap,
+{
+    fn seq_name(&self, i: usize) -> Option<&std::ffi::CStr> {
+        self.rdr.seq_name(i)
+    }
+
+    fn num_seqs(&self) -> usize {
+        self.rdr.num_seqs()
+    }
+
+    fn seq_len(&self, i: usize) -> Option<usize> {
+        self.rdr.seq_len(i)
+    }
+}
