@@ -244,13 +244,18 @@ impl<'a> Iterator for MPlpIter<'a> {
 impl<'a> MPlpIter<'a> {
     fn get_nth(&mut self, n: usize) -> Option<&'a [BamPileup]> {
         let p = self.plp_raw[n];
-        let n = self.depth[n] as usize;
+        let d = self.depth[n] as usize;
+        if n + 1 < self.plp_raw.len() {
         self.depth = &self.depth[n + 1..];
         self.plp_raw = &self.plp_raw[n + 1..];
+        } else {
+            self.depth = &[];
+            self.plp_raw = &[];
+        }
         if p.is_null() {
             Some(&[])
         } else {
-            Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, n) })
+            Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, d) })
         }
     }
 }
