@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use libc::{c_int, c_void};
 
@@ -237,21 +237,71 @@ impl<'a> Iterator for MPlpIter<'a> {
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let l = self.plp_raw.len();
-        if n >= l { None } else { self.get_nth(n) }
+        if n >= l {
+            self.clear();
+            None
+        } else {
+            self.get_nth(n)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = self.plp_raw.len();
+        (l, Some(l))
     }
 }
 
+impl<'a> DoubleEndedIterator for MPlpIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let l = self.plp_raw.len();
+        if l == 0 {
+            None
+        } else {
+            self.get_nth_back(l - 1)
+        }
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        let l = self.plp_raw.len();
+        if l <= n {
+            self.clear();
+            None
+        } else {
+            self.get_nth_back(l - n - 1)
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for MPlpIter<'a> {}
+impl<'a> FusedIterator for MPlpIter<'a> {}
+
 impl<'a> MPlpIter<'a> {
+    fn clear(&mut self) {
+        self.depth = &[];
+        self.plp_raw = &[];
+    }
+
     fn get_nth(&mut self, n: usize) -> Option<&'a [BamPileup]> {
         let p = self.plp_raw[n];
         let d = self.depth[n] as usize;
         if n + 1 < self.plp_raw.len() {
-        self.depth = &self.depth[n + 1..];
-        self.plp_raw = &self.plp_raw[n + 1..];
+            self.depth = &self.depth[n + 1..];
+            self.plp_raw = &self.plp_raw[n + 1..];
         } else {
-            self.depth = &[];
-            self.plp_raw = &[];
+            self.clear()
         }
+        if p.is_null() {
+            Some(&[])
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, d) })
+        }
+    }
+
+    fn get_nth_back(&mut self, n: usize) -> Option<&'a [BamPileup]> {
+        let p = self.plp_raw[n];
+        let d = self.depth[n] as usize;
+        self.depth = &self.depth[..n];
+        self.plp_raw = &self.plp_raw[..n];
         if p.is_null() {
             Some(&[])
         } else {
