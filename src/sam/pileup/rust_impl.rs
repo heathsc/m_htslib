@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub struct BamPileup {
-    inner: bam_pileup1_t
+    inner: bam_pileup1_t,
 }
 
 impl BamPileup {
@@ -194,19 +194,61 @@ where
         unsafe { c_func_calls::bam_mplp_reset(self.inner.as_mut() as *mut bam_mplp_t) };
     }
 
-    pub fn plp(&self, ix: usize) -> Option<&[BamPileup]> {
+    #[inline]
+    pub fn n_files(&self) -> usize {
+        self.plp_raw.len()
+    }
+
+    #[inline]
+    pub fn plp<'b>(&'b self) -> MPlpIter<'b> {
+        MPlpIter { plp_raw: &self.plp_raw, depth: &self.depth }
+    }
+    
+    pub fn plp_get(&self, ix: usize) -> Option<&[BamPileup]> {
         self.plp_raw.get(ix).and_then(|q| {
             if q.is_null() {
                 None
             } else {
                 let n = self.depth[ix] as usize;
-                Some (
-                    unsafe {
-                        std::slice::from_raw_parts(*q as *const BamPileup, n)
-                    }
-                )
+                Some(unsafe { std::slice::from_raw_parts(*q as *const BamPileup, n) })
             }
         })
+    }
+}
+
+pub struct MPlpIter<'a> {
+    plp_raw: &'a [*const bam_pileup1_t],
+    depth: &'a [c_int],
+}
+
+impl <'a> Iterator for MPlpIter<'a> {
+    type Item = &'a [BamPileup];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.plp_raw.is_empty() {
+            None
+        } else {
+            self.get_nth(0)
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let l = self.plp_raw.len();
+        if n >= l {
+            None
+        } else {
+            self.get_nth(n)
+        }
+    }
+}
+
+impl <'a> MPlpIter<'a> {
+    fn get_nth(&mut self, n: usize) -> Option<&'a [BamPileup]> {
+        let n = self.depth[n] as usize;
+        let p = self.plp_raw[n];
+        self.depth = &self.depth[n + 1..];
+        self.plp_raw = &self.plp_raw[n + 1..];
+        Some(unsafe { std::slice::from_raw_parts(p as *const BamPileup, n) })
     }
 }
 
